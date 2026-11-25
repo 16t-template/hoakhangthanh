@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -8,7 +8,8 @@ import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
 import { NAV_ITEMS } from '@/config/navigation';
 import { useUiStore } from '@/stores/ui';
-import { useAuthStore } from '@/stores/auth';
+import { useAuthStore, isUserAdmin } from '@/stores/auth';
+import { usePermissionStore } from '@/stores/permissionStore';
 import { Button } from '@/components/ui/Button';
 import { Breadcrumb } from './Breadcrumb';
 import { HeaderClock } from './HeaderClock';
@@ -51,6 +52,23 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const userMenuRef = useRef<HTMLDivElement>(null);
   const lastPath = useRef(location.pathname);
   const displayName = user?.full_name ?? 'User';
+  const userIsAdmin = isUserAdmin(user);
+  const getRights = usePermissionStore((s) => s.getRights);
+
+  // Lọc danh sách menu theo quyền của người dùng:
+  // - Menu "Phân quyền": CHỈ hiển thị cho Quản trị viên (Admin)
+  // - Các module khác: Admin thấy toàn bộ; Nhân viên chỉ thấy các module có quyền xem (view = true)
+  const visibleNavItems = useMemo(() => {
+    return NAV_ITEMS.filter((item) => {
+      if (item.adminOnly || item.moduleId === 'phanQuyen') {
+        return userIsAdmin;
+      }
+      if (userIsAdmin) return true;
+      if (!user) return true;
+      const rights = getRights(user.id, item.moduleId);
+      return rights.view;
+    });
+  }, [user, userIsAdmin, getRights]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -134,7 +152,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <div className="flex-1 min-h-0 flex flex-col py-3 relative">
           <div className="flex-1 overflow-y-auto no-scrollbar min-h-0">
             <nav className="px-2 space-y-1" aria-label={t('nav.mainNav')}>
-              {NAV_ITEMS.map((item) => {
+              {visibleNavItems.map((item) => {
                 const name = t(item.nameKey);
                 const Icon = item.icon;
                 return (

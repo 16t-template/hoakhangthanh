@@ -13,6 +13,7 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { GOOGLE_SHEETS_CONFIG } from '@/config/googleSheetsConfig';
+import { DEFAULT_SPREADSHEET_ID, spreadsheetUrlOf, useAppSettingsStore } from '@/stores/appSettingsStore';
 import { useGoogleSheetsStore } from '@/stores/googleSheetsStore';
 
 interface Props {
@@ -36,6 +37,8 @@ const MODULE_SHEETS = [
 ];
 
 export function GoogleSheetsModal({ isOpen, onClose }: Props) {
+  // Sheet đang dùng (đặt ở module Cài đặt), không có thì sheet mặc định
+  const activeSpreadsheetId = useAppSettingsStore((s) => s.spreadsheetId) || DEFAULT_SPREADSHEET_ID;
   const {
     isConnected,
     isSyncing,
@@ -89,7 +92,7 @@ export function GoogleSheetsModal({ isOpen, onClose }: Props) {
               </span>
             </div>
             <a
-              href={GOOGLE_SHEETS_CONFIG.spreadsheetUrl}
+              href={spreadsheetUrlOf(activeSpreadsheetId)}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-xs"

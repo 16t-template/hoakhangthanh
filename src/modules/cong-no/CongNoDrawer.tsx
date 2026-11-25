@@ -28,6 +28,7 @@ import type { DebtDailyRecord } from '@/types/hoaKhangThanh';
 import { formatDate } from '@/lib/format';
 import { PartnerAutocomplete } from '@/components/ui/PartnerAutocomplete';
 import { getRecordReferenceCode } from '@/lib/virtualDebt';
+import { triggerImmediateSync } from '@/stores/googleSheetsStore';
 
 interface Props {
   isOpen: boolean;
@@ -292,6 +293,7 @@ export function CongNoDrawer({
 
     if (mode === 'create') {
       addRecord(payload as any);
+      triggerImmediateSync(['debtRecords']);
       if (partnerType === 'ncc') {
         const actName = type === 'chi' ? 'mua hàng (+ nợ)' : 'trả nợ (- nợ)';
         toast.success(
@@ -306,6 +308,7 @@ export function CongNoDrawer({
       }
     } else if (mode === 'edit' && record) {
       updateRecord(record.id, payload);
+      triggerImmediateSync(['debtRecords']);
       toast.success('Đã cập nhật bản ghi công nợ thành công');
     }
     onClose();

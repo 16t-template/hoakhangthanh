@@ -31,6 +31,7 @@ import { formatDate, parseDateTimestamp } from '@/lib/format';
 import { checkCustomerOverdueDebt } from '@/lib/debtCheck';
 import { computeAllOrdersVirtualDebt, formatOldDebtDisplay } from '@/lib/orderDebtHelper';
 import { useColumnSettings } from '@/hooks/useColumnSettings';
+import { useUserPermissions } from '@/stores/permissionStore';
 import { DonHangFormModal } from './DonHangFormModal';
 import { DonHangDetailModal } from './DonHangDetailModal';
 import { DonHangStats } from './DonHangStats';
@@ -56,6 +57,7 @@ const INITIAL_COLUMNS: ColumnDef[] = [
 ];
 
 export default function DonHangPage() {
+  const perms = useUserPermissions('donHang');
   const { orders, deleteOrder } = useOrderStore();
   const debtRecords = useDebtStore((s) => s.records);
   const distributors = useDistributorStore((s) => s.distributors);
@@ -247,6 +249,10 @@ export default function DonHangPage() {
   };
 
   const handleDeleteMany = () => {
+    if (!perms.delete) {
+      toast.error('Bạn không có quyền xóa đơn hàng!');
+      return;
+    }
     if (confirm(`Bạn có chắc muốn xóa ${selectedIds.size} đơn hàng đã chọn?`)) {
       selectedIds.forEach((id) => deleteOrder(id));
       setSelectedIds(new Set());
@@ -255,11 +261,19 @@ export default function DonHangPage() {
   };
 
   const handleAddNew = () => {
+    if (!perms.create) {
+      toast.error('Bạn không có quyền tạo đơn hàng mới!');
+      return;
+    }
     setOrderToEdit(null);
     setIsFormOpen(true);
   };
 
   const handleEdit = (order: Order) => {
+    if (!perms.edit) {
+      toast.error('Bạn không có quyền chỉnh sửa đơn hàng!');
+      return;
+    }
     const v = virtualDebtMap.get(order.id);
     const enriched = v ? { ...order, oldDebt: v.oldDebt, totalPayment: v.totalPayment } : order;
     setOrderToEdit(enriched);
@@ -267,6 +281,10 @@ export default function DonHangPage() {
   };
 
   const handleDelete = (order: Order) => {
+    if (!perms.delete) {
+      toast.error('Bạn không có quyền xóa đơn hàng!');
+      return;
+    }
     if (confirm(`Bạn có chắc muốn xóa đơn hàng ${order.code}?`)) {
       deleteOrder(order.id);
       toast.success(`Đã xóa đơn hàng ${order.code}`);
@@ -447,28 +465,32 @@ export default function DonHangPage() {
             >
               <Printer size={14} />
             </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEdit(enrichedRow);
-              }}
-              className="p-1 rounded text-primary hover:bg-primary/10 transition-colors"
-              title="Chỉnh sửa đơn hàng"
-            >
-              <SquarePen size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(row);
-              }}
-              className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-              title="Xóa đơn hàng"
-            >
-              <Trash2 size={14} />
-            </button>
+            {perms.edit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEdit(enrichedRow);
+                }}
+                className="p-1 rounded text-primary hover:bg-primary/10 transition-colors"
+                title="Chỉnh sửa đơn hàng"
+              >
+                <SquarePen size={14} />
+              </button>
+            )}
+            {perms.delete && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(row);
+                }}
+                className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                title="Xóa đơn hàng"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         );
       }
@@ -583,6 +605,20 @@ export default function DonHangPage() {
     setSearchTerm('');
   };
 
+  if (!perms.view) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center mb-4">
+          <AlertTriangle size={28} />
+        </div>
+        <h2 className="text-lg font-bold text-foreground mb-1">Chưa được cấp quyền xem Đơn hàng</h2>
+        <p className="text-sm text-muted-foreground max-w-md">
+          Tài khoản của bạn hiện chưa được Quản trị viên cấp quyền xem dữ liệu module Đơn hàng. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
       {/* Top Segmented Tabs: Danh sách | Thống kê | Lịch sử thao tác */}
@@ -618,7 +654,7 @@ export default function DonHangPage() {
             onClearAllFilters={handleClearAllFilters}
             actions={
               <div className="flex items-center gap-1.5">
-                {orders.length > 0 && (
+                {perms.delete && orders.length > 0 && (
                   <Button
                     type="button"
                     size="sm"
@@ -641,14 +677,16 @@ export default function DonHangPage() {
                     <span className="hidden sm:inline">Xóa tất cả đơn</span>
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  onClick={handleAddNew}
-                  className="h-8 gap-1.5 text-xs font-semibold bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-                >
-                  <Plus size={14} className="stroke-[2.5px]" />
-                  <span>Thêm mới</span>
-                </Button>
+                {perms.create && (
+                  <Button
+                    size="sm"
+                    onClick={handleAddNew}
+                    className="h-8 gap-1.5 text-xs font-semibold bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                  >
+                    <Plus size={14} className="stroke-[2.5px]" />
+                    <span>Thêm mới</span>
+                  </Button>
+                )}
               </div>
             }
             filters={

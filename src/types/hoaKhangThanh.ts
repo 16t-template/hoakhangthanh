@@ -32,6 +32,8 @@ export interface Supplier {
   finalDebt?: number; // Công nợ cuối
   status: 'active' | 'inactive';
   notes?: string;
+  lastOrderDate?: string; // Ngày lên đơn nhập gần nhất
+  daysSinceLastOrder?: number; // Số ngày chưa nhập hàng
 }
 
 export interface Distributor {
@@ -52,6 +54,8 @@ export interface Distributor {
   collectedAmount?: number; // Tiền thu nợ
   finalDebt?: number; // Công nợ cuối
   status: 'active' | 'inactive';
+  lastOrderDate?: string; // Ngày lên đơn bán gần nhất
+  daysSinceLastOrder?: number; // Số ngày chưa đặt hàng
 }
 
 export interface OrderItem {

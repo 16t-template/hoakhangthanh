@@ -16,6 +16,7 @@ export interface DailyStockRecord {
   flowerName: string;
   closingStock: number;
   openingStockCustom?: number;
+  actualImportNCC?: number; // Nhập trực tiếp số lượng thực nhập từ NCC
   notes?: string;
 }
 
@@ -26,6 +27,12 @@ interface DailyStockReconcileState {
     dateYMD: string,
     flowerId: string,
     closingStock: number,
+    flowerInfo: { flowerCode: string; flowerName: string },
+  ) => void;
+  setActualImportNCC: (
+    dateYMD: string,
+    flowerId: string,
+    actualImportNCC: number | undefined,
     flowerInfo: { flowerCode: string; flowerName: string },
   ) => void;
   setOpeningStockCustom: (
@@ -90,7 +97,7 @@ function updateDay(
 
 /** Bản ghi không còn dữ liệu thật nào thì bỏ đi cho nhẹ */
 function isEmptyRecord(r: DailyStockRecord) {
-  return !r.closingStock && r.openingStockCustom === undefined && !r.notes;
+  return !r.closingStock && r.openingStockCustom === undefined && r.actualImportNCC === undefined && !r.notes;
 }
 
 function upsert(
@@ -139,6 +146,23 @@ export const useDailyStockReconcileStore = create<DailyStockReconcileState>()(
               flowerName: flowerInfo.flowerName || cur.flowerName,
               closingStock: closing,
             })),
+          );
+          return records ? { records } : state;
+        }),
+
+      setActualImportNCC: (dateYMD, flowerId, actualImportNCC, flowerInfo) =>
+        set((state) => {
+          const records = updateDay(state.records, dateYMD, (items) =>
+            upsert(items, flowerId, flowerInfo, (cur) => {
+              const next = {
+                ...cur,
+                flowerCode: flowerInfo.flowerCode || cur.flowerCode,
+                flowerName: flowerInfo.flowerName || cur.flowerName,
+              };
+              if (actualImportNCC === undefined) delete next.actualImportNCC;
+              else next.actualImportNCC = Math.max(0, actualImportNCC || 0);
+              return next;
+            }),
           );
           return records ? { records } : state;
         }),

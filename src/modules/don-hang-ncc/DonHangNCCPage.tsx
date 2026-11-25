@@ -20,6 +20,7 @@ import { DataTable } from '@/components/data/DataTable';
 import { MultiSelectFilter, type FilterOption } from '@/components/ui/MultiSelectFilter';
 import type { ColumnDef } from '@/stores/createListStore';
 import { syncAllOrdersToDebtRecords, useSupplierOrderStore } from '@/stores/hoaKhangThanhStore';
+import { useUserPermissions } from '@/stores/permissionStore';
 import type { SupplierOrder, SupplierOrderItem } from '@/types/hoaKhangThanh';
 import { formatDate, parseDateTimestamp } from '@/lib/format';
 import { useColumnSettings } from '@/hooks/useColumnSettings';
@@ -45,6 +46,7 @@ const INITIAL_COLUMNS: ColumnDef[] = [
 ];
 
 export default function DonHangNCCPage() {
+  const perms = useUserPermissions('donHangNCC');
   const { orders, deleteOrder } = useSupplierOrderStore();
 
   // Tự động kiểm tra và đồng bộ đơn nhập sang sổ công nợ
@@ -183,6 +185,10 @@ export default function DonHangNCCPage() {
   };
 
   const handleDeleteMany = () => {
+    if (!perms.delete) {
+      toast.error('Bạn không có quyền xóa đơn hàng NCC!');
+      return;
+    }
     if (confirm(`Bạn có chắc muốn xóa ${selectedIds.size} đơn đặt hàng NCC đã chọn?`)) {
       selectedIds.forEach((id) => deleteOrder(id));
       setSelectedIds(new Set());
@@ -191,18 +197,30 @@ export default function DonHangNCCPage() {
   };
 
   const handleAddNew = () => {
+    if (!perms.create) {
+      toast.error('Bạn không có quyền tạo đơn đặt hàng NCC!');
+      return;
+    }
     setOrderToEdit(null);
     setInitialItemsForNewOrder(undefined);
     setIsFormOpen(true);
   };
 
   const handleEdit = (order: SupplierOrder) => {
+    if (!perms.edit) {
+      toast.error('Bạn không có quyền chỉnh sửa đơn hàng NCC!');
+      return;
+    }
     setOrderToEdit(order);
     setInitialItemsForNewOrder(undefined);
     setIsFormOpen(true);
   };
 
   const handleDelete = (order: SupplierOrder) => {
+    if (!perms.delete) {
+      toast.error('Bạn không có quyền xóa đơn hàng NCC!');
+      return;
+    }
     if (confirm(`Bạn có chắc muốn xóa đơn đặt hàng NCC ${order.code}?`)) {
       deleteOrder(order.id);
       toast.success(`Đã xóa đơn đặt hàng NCC ${order.code}`);
@@ -366,28 +384,32 @@ export default function DonHangNCCPage() {
       case 'actions':
         return (
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEdit(order);
-              }}
-              className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              title="Chỉnh sửa đơn"
-            >
-              <SquarePen size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDelete(order);
-              }}
-              className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-muted transition-colors"
-              title="Xóa đơn"
-            >
-              <Trash2 size={14} />
-            </button>
+            {perms.edit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEdit(order);
+                }}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                title="Chỉnh sửa đơn"
+              >
+                <SquarePen size={14} />
+              </button>
+            )}
+            {perms.delete && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete(order);
+                }}
+                className="p-1 rounded text-muted-foreground hover:text-rose-600 hover:bg-muted transition-colors"
+                title="Xóa đơn"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         );
 
@@ -423,6 +445,20 @@ export default function DonHangNCCPage() {
       </div>
     );
   };
+
+  if (!perms.view) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center mb-4">
+          <Building2 size={28} />
+        </div>
+        <h2 className="text-lg font-bold text-foreground mb-1">Chưa được cấp quyền xem Đơn hàng NCC</h2>
+        <p className="text-sm text-muted-foreground max-w-md">
+          Tài khoản của bạn hiện chưa được Quản trị viên cấp quyền xem dữ liệu Đơn đặt hoa NCC / Nhà vườn. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
@@ -464,7 +500,7 @@ export default function DonHangNCCPage() {
             onDeleteMany={handleDeleteMany}
             actions={
               <div className="flex items-center gap-2">
-                {orders.length > 0 && (
+                {perms.delete && orders.length > 0 && (
                   <Button
                     type="button"
                     size="sm"
@@ -487,26 +523,30 @@ export default function DonHangNCCPage() {
                     <span className="hidden sm:inline">Xóa tất cả đơn</span>
                   </Button>
                 )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsQuickOCRModalOpen(true)}
-                  className="h-8 gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-500/10 shadow-xs"
-                >
-                  <Camera size={14} className="stroke-[2.2]" />
-                  <span>📷 Lên đơn từ ảnh</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="default"
-                  size="sm"
-                  onClick={handleAddNew}
-                  className="h-8 gap-1.5 text-xs font-semibold bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-                >
-                  <Plus size={14} className="stroke-[2.5]" />
-                  <span>Thêm đơn nhập</span>
-                </Button>
+                {perms.create && (
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsQuickOCRModalOpen(true)}
+                      className="h-8 gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-500/10 shadow-xs"
+                    >
+                      <Camera size={14} className="stroke-[2.2]" />
+                      <span>📷 Lên đơn từ ảnh</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="default"
+                      size="sm"
+                      onClick={handleAddNew}
+                      className="h-8 gap-1.5 text-xs font-semibold bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+                    >
+                      <Plus size={14} className="stroke-[2.5]" />
+                      <span>Thêm đơn nhập</span>
+                    </Button>
+                  </>
+                )}
               </div>
             }
             filters={

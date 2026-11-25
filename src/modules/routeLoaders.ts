@@ -17,6 +17,7 @@ export const pageLoaders = {
   thuChi: () => import('./thu-chi/ThuChiPage'),
   nhanVien: () => import('./nhan-vien/NhanVienPage'),
   phanQuyen: () => import('./phan-quyen/PhanQuyenPage'),
+  caiDat: () => import('./cai-dat/CaiDatPage'),
 } satisfies Record<string, PageLoader>;
 
 const loadersByPath: Record<string, PageLoader> = {
@@ -41,6 +42,7 @@ const loadersByPath: Record<string, PageLoader> = {
   '/thu-chi': pageLoaders.thuChi,
   '/nhan-vien': pageLoaders.nhanVien,
   '/phan-quyen': pageLoaders.phanQuyen,
+  '/cai-dat': pageLoaders.caiDat,
 };
 
 export function preloadRoute(path: string) {

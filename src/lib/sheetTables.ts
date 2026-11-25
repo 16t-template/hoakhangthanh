@@ -35,8 +35,6 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
       const totalAmt = o.totalAmount ?? (subtotal + (o.shippingFee || 0) - (o.discount || 0));
       const debt = o.oldDebt ?? 0;
       const totalPay = o.totalPayment ?? (totalAmt + debt);
-      const paid = o.paidAmount ?? 0;
-      const remaining = totalPay - paid;
 
       return [
         o.code || '',
@@ -48,8 +46,6 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
         totalAmt,
         debt,
         totalPay,
-        paid,
-        remaining,
         o.status || '',
         o.paymentStatus || '',
         o.creator || '',
@@ -59,10 +55,12 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
       ];
     });
 
-    // Clear old data from row 2, then write new (17 columns A to Q, bỏ SĐT và Địa chỉ)
+    // 15 cột A–O: id, Ngày, NPP, Thành tiền hoa, Cước xe, Trừ hàng, Tổng tiền, Công nợ cũ, Thanh toán,
+    // Trạng thái đơn, Trạng thái thanh toán, Người tạo, Số lượng hoa, Ghi chú, Cập nhật lúc
+    // (đã bỏ "Đã thanh toán" và "Còn nợ đơn" — Còn nợ đơn web tự tính)
     batchData.push({
-      range: 'DON_HANG!A2:Q' + Math.max(2, rows.length + 1),
-      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']],
+      range: 'DON_HANG!A2:O' + Math.max(2, rows.length + 1),
+      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '', '', '', '']],
     });
 
     // 2. CHI_TIET_DON_HANG (Thứ tự mới: Mã ĐH, Ngày, Khách hàng, Mã hoa, Giá bán, SL, TT bán, Giá vốn, TT vốn, Lợi nhuận, Tên hoa, ĐVT)
@@ -116,15 +114,13 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
     });
   }
 
-  // 4. NHA_PHAN_PHOI
+  // 4. NHA_PHAN_PHOI (12 cột A–L: đã bỏ "Người liên hệ" và "Khu vực")
   if (body.distributors) {
     const rows = body.distributors.map((d) => [
       d.code || '',
       d.name || '',
-      d.representative || '',
       d.phone || '',
       d.address || '',
-      d.region || '',
       d.oldDebt || 0,
       d.totalRevenue || 0,
       d.collectedAmount || 0,
@@ -135,8 +131,8 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
       d.status || 'Hoạt động',
     ]);
     batchData.push({
-      range: 'NHA_PHAN_PHOI!A2:N' + Math.max(2, rows.length + 1),
-      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '', '', '']],
+      range: 'NHA_PHAN_PHOI!A2:L' + Math.max(2, rows.length + 1),
+      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '']],
     });
   }
 

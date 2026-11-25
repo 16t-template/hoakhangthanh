@@ -22,6 +22,7 @@ import { DataTable } from '@/components/data/DataTable';
 import { MultiSelectFilter, type FilterOption } from '@/components/ui/MultiSelectFilter';
 import type { ColumnDef } from '@/stores/createListStore';
 import { useColumnSettings } from '@/hooks/useColumnSettings';
+import { useUserPermissions } from '@/stores/permissionStore';
 import { useCashStore, useFixedExpenseStore } from '@/stores/hoaKhangThanhStore';
 import type { CashTransaction, FixedExpensePreset } from '@/types/hoaKhangThanh';
 import { formatDate, todayISODate, parseDateTimestamp } from '@/lib/format';
@@ -44,6 +45,7 @@ const INITIAL_COLUMNS: ColumnDef[] = [
 ];
 
 export default function ThuChiPage() {
+  const perms = useUserPermissions('thuChi');
   const { transactions, addTransaction, deleteTransaction } = useCashStore();
   const { presets } = useFixedExpenseStore();
   const [activeTab, setActiveTab] = useState<Tab>('danhsach');
@@ -133,6 +135,10 @@ export default function ThuChiPage() {
   };
 
   const handleDeleteMany = () => {
+    if (!perms.delete) {
+      toast.error('Bạn không có quyền xóa phiếu thu chi!');
+      return;
+    }
     if (confirm(`Bạn có chắc muốn xóa ${selectedIds.size} phiếu đã chọn?`)) {
       selectedIds.forEach((id) => deleteTransaction(id));
       setSelectedIds(new Set());
@@ -141,6 +147,10 @@ export default function ThuChiPage() {
   };
 
   const handleCreate = (type: 'income' | 'expense') => {
+    if (!perms.create) {
+      toast.error('Bạn không có quyền tạo phiếu thu chi mới!');
+      return;
+    }
     setSelectedTransaction(null);
     setDefaultCreateType(type);
     setDrawerMode('create');
@@ -154,12 +164,20 @@ export default function ThuChiPage() {
   };
 
   const handleEdit = (item: CashTransaction) => {
+    if (!perms.edit) {
+      toast.error('Bạn không có quyền chỉnh sửa phiếu thu chi!');
+      return;
+    }
     setSelectedTransaction(item);
     setDrawerMode('edit');
     setIsDrawerOpen(true);
   };
 
   const handleDelete = (item: CashTransaction) => {
+    if (!perms.delete) {
+      toast.error('Bạn không có quyền xóa phiếu thu chi!');
+      return;
+    }
     if (confirm(`Bạn có chắc muốn xóa phiếu ${item.code}?`)) {
       deleteTransaction(item.id);
       toast.success(`Đã xóa phiếu ${item.code}`);
@@ -252,22 +270,26 @@ export default function ThuChiPage() {
       case 'actions':
         return (
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => handleEdit(row)}
-              className="p-1 rounded text-primary hover:bg-primary/10 transition-colors"
-              title="Chỉnh sửa"
-            >
-              <SquarePen size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDelete(row)}
-              className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-              title="Xóa"
-            >
-              <Trash2 size={14} />
-            </button>
+            {perms.edit && (
+              <button
+                type="button"
+                onClick={() => handleEdit(row)}
+                className="p-1 rounded text-primary hover:bg-primary/10 transition-colors"
+                title="Chỉnh sửa"
+              >
+                <SquarePen size={14} />
+              </button>
+            )}
+            {perms.delete && (
+              <button
+                type="button"
+                onClick={() => handleDelete(row)}
+                className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                title="Xóa"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         );
       default:
@@ -312,6 +334,20 @@ export default function ThuChiPage() {
     setSelectedMethods([]);
     setSearchTerm('');
   };
+
+  if (!perms.view) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center mb-4">
+          <Wallet size={28} />
+        </div>
+        <h2 className="text-lg font-bold text-foreground mb-1">Chưa được cấp quyền xem Sổ quỹ Thu - Chi</h2>
+        <p className="text-sm text-muted-foreground max-w-md">
+          Tài khoản của bạn hiện chưa được Quản trị viên cấp quyền xem dữ liệu Sổ quỹ Thu - Chi. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
@@ -378,25 +414,27 @@ export default function ThuChiPage() {
             activeFilterCount={activeFilterCount}
             onClearAllFilters={handleClearAllFilters}
             actions={
-              <div className="flex items-center gap-2">
-                <Button
-                  size="sm"
-                  onClick={() => handleCreate('expense')}
-                  variant="outline"
-                  className="h-8 gap-1.5 text-xs font-semibold text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                >
-                  <ArrowUpRight size={14} className="stroke-[2.5px]" />
-                  <span>Phiếu Chi</span>
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => handleCreate('income')}
-                  className="h-8 gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
-                >
-                  <Plus size={14} className="stroke-[2.5px]" />
-                  <span>Phiếu Thu</span>
-                </Button>
-              </div>
+              perms.create ? (
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => handleCreate('expense')}
+                    variant="outline"
+                    className="h-8 gap-1.5 text-xs font-semibold text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                  >
+                    <ArrowUpRight size={14} className="stroke-[2.5px]" />
+                    <span>Phiếu Chi</span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => handleCreate('income')}
+                    className="h-8 gap-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                  >
+                    <Plus size={14} className="stroke-[2.5px]" />
+                    <span>Phiếu Thu</span>
+                  </Button>
+                </div>
+              ) : undefined
             }
             filters={
               <>

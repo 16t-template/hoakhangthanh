@@ -142,3 +142,15 @@ export const useAuthStore = create<AuthState>()(
 export function currentUserId() {
   return useAuthStore.getState().user?.id ?? '';
 }
+
+export function isUserAdmin(user?: AuthUser | null): boolean {
+  if (!user) return false;
+  return (
+    user.role === 'admin' ||
+    Boolean(user.department?.includes('Quản trị')) ||
+    Boolean(user.position?.includes('Giám đốc')) ||
+    user.code === 'NV-001' ||
+    user.id === 'nv-admin' ||
+    user.username === 'admin'
+  );
+}

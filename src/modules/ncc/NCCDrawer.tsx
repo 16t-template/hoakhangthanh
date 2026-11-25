@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Mail, MapPin, Phone, Star, Truck } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Mail, MapPin, Phone, Star, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { useSupplierStore } from '@/stores/hoaKhangThanhStore';
 import type { Supplier } from '@/types/hoaKhangThanh';
+import { formatDate } from '@/lib/format';
 
 interface Props {
   isOpen: boolean;
@@ -178,6 +179,41 @@ export function NCCDrawer({ isOpen, onClose, supplier, mode = 'create' }: Props)
               <span className="text-muted-foreground">Địa chỉ vườn:</span>
               <span className="font-semibold text-foreground flex items-center gap-1 text-right max-w-[240px]"><MapPin size={13} className="shrink-0" /> {supplier.address}</span>
             </div>
+            {/* Tình trạng đơn nhập gần nhất */}
+            {supplier.daysSinceLastOrder !== undefined ? (
+              <div
+                className={`p-3 rounded-lg border flex items-center justify-between text-xs ${
+                  supplier.daysSinceLastOrder > 3
+                    ? 'bg-rose-50 border-rose-200 text-rose-700 dark:bg-rose-950/40 dark:border-rose-900 dark:text-rose-300'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/40 dark:border-emerald-900 dark:text-emerald-300'
+                }`}
+              >
+                <div className="flex items-center gap-1.5 font-medium">
+                  {supplier.daysSinceLastOrder > 3 ? (
+                    <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                  ) : (
+                    <CheckCircle2 size={14} className="text-emerald-600 shrink-0" />
+                  )}
+                  <span>
+                    {supplier.daysSinceLastOrder > 3
+                      ? `Quá 3 ngày chưa nhập hàng (${supplier.daysSinceLastOrder} ngày)`
+                      : supplier.daysSinceLastOrder === 0
+                      ? 'Đã nhập hàng hôm nay'
+                      : `Đã nhập hàng ${supplier.daysSinceLastOrder} ngày trước`}
+                  </span>
+                </div>
+                {supplier.lastOrderDate && (
+                  <span className="text-[11px] font-mono opacity-80">
+                    Lần cuối: {formatDate(supplier.lastOrderDate)}
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg border border-border bg-muted/30 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Clock size={13} className="shrink-0 opacity-70" />
+                <span>Chưa từng có đơn nhập hàng từ nhà cung cấp này</span>
+              </div>
+            )}
             {/* Thống kê công nợ & giao dịch */}
             <div className="p-3.5 rounded-xl border border-border bg-card space-y-2">
               <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block pb-1 border-b border-border/60">

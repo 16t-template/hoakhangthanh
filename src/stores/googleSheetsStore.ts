@@ -5,6 +5,7 @@ import {
   pullFromGoogleSheets,
   syncAllToGoogleSheets,
   type GoogleSheetsStatus,
+  type SyncableModule,
 } from '@/lib/googleSheetsService';
 import {
   useCashStore,
@@ -38,7 +39,7 @@ interface GoogleSheetsState {
 
   // Actions
   checkStatus: () => Promise<void>;
-  syncToSheets: (isBackground?: boolean) => Promise<boolean>;
+  syncToSheets: (isBackground?: boolean, modules?: SyncableModule[]) => Promise<boolean>;
   pullFromSheets: () => Promise<boolean>;
   setAutoSync: (enabled: boolean) => void;
   clearLogs: () => void;
@@ -69,15 +70,18 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
         }
       },
 
-      syncToSheets: async (isBackground = false) => {
-        if (get().isSyncing) return false;
+      syncToSheets: async (isBackground = false, modules?: SyncableModule[]) => {
+        if (get().isSyncing) {
+          hasPendingSync = true;
+          return false;
+        }
         set({ isSyncing: true });
 
         const now = new Date();
         const timeStr = now.toLocaleTimeString('vi-VN') + ' ' + now.toLocaleDateString('vi-VN');
 
         try {
-          const result = await syncAllToGoogleSheets();
+          const result = await syncAllToGoogleSheets(modules);
           if (result.success) {
             set((state) => ({
               isSyncing: false,
@@ -89,13 +93,13 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
                   time: timeStr,
                   type: 'push',
                   status: 'success',
-                  message: `Đã đồng bộ ${result.updatedSheetsCount || 11} sheets (${result.totalUpdatedCells || 0} ô dữ liệu) lên Google Sheets`,
+                  message: `Đã đồng bộ ${result.updatedSheetsCount || 1} sheets (${result.totalUpdatedCells || 0} ô dữ liệu) lên Google Sheets`,
                 },
                 ...state.syncLogs.slice(0, 49),
               ],
             }));
             if (!isBackground) {
-              toast.success('Đã đồng bộ toàn bộ dữ liệu lên Google Sheets thành công!');
+              toast.success('Đã đồng bộ dữ liệu lên Google Sheets thành công!');
             }
             return true;
           } else {
@@ -112,9 +116,7 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
                 ...state.syncLogs.slice(0, 49),
               ],
             }));
-            {
-              toast.error(`Đồng bộ thất bại: ${result.error}`);
-            }
+            toast.error(`Đồng bộ thất bại: ${result.error}`);
             return false;
           }
         } catch (err: any) {
@@ -131,10 +133,19 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
               ...state.syncLogs.slice(0, 49),
             ],
           }));
-          {
-            toast.error(`Lỗi: ${err?.message}`);
-          }
+          toast.error(`Lỗi: ${err?.message}`);
           return false;
+        } finally {
+          set({ isSyncing: false });
+          // Nếu có thay đổi mới phát sinh trong lúc đang đồng bộ, thực hiện tiếp ngay lập tức
+          if (hasPendingSync) {
+            hasPendingSync = false;
+            const nextMods = Array.from(pendingModules);
+            pendingModules.clear();
+            setTimeout(() => {
+              void get().syncToSheets(true, nextMods.length > 0 ? nextMods : undefined);
+            }, 80);
+          }
         }
       },
 
@@ -207,6 +218,30 @@ let syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let isInitialized = false;
 let applyingRemoteData = false;
 let initialPullDone = false;
+const pendingModules = new Set<SyncableModule>();
+let hasPendingSync = false;
+
+/**
+ * Kích hoạt đồng bộ ngay lập tức cho các module cụ thể mà không cần chờ debounce
+ */
+export function triggerImmediateSync(modules?: SyncableModule[]) {
+  if (modules) {
+    modules.forEach((m) => pendingModules.add(m));
+  }
+  if (syncDebounceTimer) {
+    clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = null;
+  }
+  const { autoSync, syncToSheets, isSyncing } = useGoogleSheetsStore.getState();
+  if (!autoSync) return;
+  if (isSyncing) {
+    hasPendingSync = true;
+    return;
+  }
+  const mods = Array.from(pendingModules);
+  pendingModules.clear();
+  void syncToSheets(true, mods.length > 0 ? mods : undefined);
+}
 
 /**
  * Tự động đồng bộ lên Google Sheets mỗi khi có thay đổi dữ liệu đơn hàng, hoa, NPP, NCC, thu chi
@@ -215,16 +250,18 @@ export function initGoogleSheetsAutoSync() {
   if (typeof window === 'undefined' || isInitialized) return;
   isInitialized = true;
 
-  const handleStoreChange = () => {
+  const handleStoreChange = (mod?: SyncableModule) => {
     if (applyingRemoteData) return;
     // Google Sheets là chuẩn: chưa tải xong dữ liệu từ Sheets thì KHÔNG đẩy dữ liệu cũ trên web lên
     // (tránh làm sống lại các dòng vừa xóa trên Sheets).
     if (!initialPullDone) return;
+    if (mod) pendingModules.add(mod);
+
     const { autoSync, syncToSheets, isSyncing } = useGoogleSheetsStore.getState();
     if (!autoSync) return;
+
     if (isSyncing) {
-      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-      syncDebounceTimer = setTimeout(handleStoreChange, 2000);
+      hasPendingSync = true;
       return;
     }
 
@@ -232,16 +269,23 @@ export function initGoogleSheetsAutoSync() {
       clearTimeout(syncDebounceTimer);
     }
 
-    // Debounce 2 giây để gom các thao tác liên tiếp
+    // Debounce ngắn (400ms) để gom các thao tác liên tiếp nhưng vẫn ghi lên Sheets cực nhanh
     syncDebounceTimer = setTimeout(() => {
-      if (useGoogleSheetsStore.getState().autoSync) syncToSheets(true);
-    }, 2000);
+      syncDebounceTimer = null;
+      const mods = Array.from(pendingModules);
+      pendingModules.clear();
+      if (useGoogleSheetsStore.getState().autoSync) {
+        void syncToSheets(true, mods.length > 0 ? mods : undefined);
+      }
+    }, 400);
   };
 
   _startSubscriptions(handleStoreChange);
 
   // Mở web: tải dữ liệu từ Google Sheets TRƯỚC (Sheets là chuẩn), tải xong mới cho phép tự đẩy lên.
-  // Tải lỗi (mất mạng...) thì thử lại sau 30 giây, trong lúc đó không đẩy dữ liệu cũ lên.
+  // Tải lỗi (mất mạng, Cloudflare quá hạn mức...) thì thử lại THƯA DẦN: 30s, 1, 2, 4, 8 phút... tối đa 15 phút
+  // (không gọi dồn dập làm vượt hạn mức). Trong lúc đó không đẩy dữ liệu cũ lên.
+  let retryCount = 0;
   const refreshFromSheets = async () => {
     const { autoSync, pullFromSheets } = useGoogleSheetsStore.getState();
     if (!autoSync) {
@@ -257,23 +301,64 @@ export function initGoogleSheetsAutoSync() {
     } finally {
       applyingRemoteData = false;
     }
-    if (ok) initialPullDone = true;
-    else window.setTimeout(() => void refreshFromSheets(), 30000);
+    if (ok) {
+      initialPullDone = true;
+      retryCount = 0;
+    } else {
+      const delay = Math.min(30000 * 2 ** retryCount, 15 * 60 * 1000);
+      retryCount += 1;
+      window.setTimeout(() => void refreshFromSheets(), delay);
+    }
   };
 
   void refreshFromSheets();
 }
 
-function _startSubscriptions(handleStoreChange: () => void) {
-  useOrderStore.subscribe(handleStoreChange);
-  useFlowerStore.subscribe(handleStoreChange);
-  useDistributorStore.subscribe(handleStoreChange);
-  useSupplierStore.subscribe(handleStoreChange);
-  useCashStore.subscribe(handleStoreChange);
-  useDebtStore.subscribe(handleStoreChange);
-  useInventoryStore.subscribe(handleStoreChange);
-  useEmployeeStore.subscribe(handleStoreChange);
-  useSupplierOrderStore.subscribe(handleStoreChange);
+/**
+ * Đổi sang Google Sheet khác (module Cài đặt): CHẶN ghi lên, tải dữ liệu của sheet mới về trước,
+ * tải xong mới cho ghi lại — tránh ghi dữ liệu của sheet cũ đè lên sheet mới.
+ * Trả về true nếu tải về thành công.
+ */
+export async function reloadFromNewSpreadsheet(): Promise<boolean> {
+  if (syncDebounceTimer) {
+    clearTimeout(syncDebounceTimer);
+    syncDebounceTimer = null;
+  }
+  pendingModules.clear();
+  hasPendingSync = false;
+  initialPullDone = false;
+
+  // Đợi lượt đồng bộ đang chạy (nếu có) xong, tối đa 60 giây
+  for (let i = 0; i < 120 && useGoogleSheetsStore.getState().isSyncing; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
+  applyingRemoteData = true;
+  let ok = false;
+  try {
+    ok = Boolean(await useGoogleSheetsStore.getState().pullFromSheets());
+  } catch {
+    ok = false;
+  } finally {
+    applyingRemoteData = false;
+  }
+  // Tải lỗi thì vẫn chặn ghi lên cho tới khi tải lại thành công (mở lại web hoặc bấm Tải về)
+  initialPullDone = ok;
+  if (ok) void useGoogleSheetsStore.getState().checkStatus();
+  return ok;
+}
+
+function _startSubscriptions(handleStoreChange: (mod?: SyncableModule) => void) {
+  useOrderStore.subscribe(() => handleStoreChange('orders'));
+  useFlowerStore.subscribe(() => handleStoreChange('flowers'));
+  useDistributorStore.subscribe(() => handleStoreChange('distributors'));
+  useSupplierStore.subscribe(() => handleStoreChange('suppliers'));
+  useCashStore.subscribe(() => handleStoreChange('transactions'));
+  useDebtStore.subscribe(() => handleStoreChange('debtRecords'));
+  useInventoryStore.subscribe(() => handleStoreChange('inventory'));
+  useEmployeeStore.subscribe(() => handleStoreChange('employees'));
+  useSupplierOrderStore.subscribe(() => handleStoreChange('supplierOrders'));
+  // Lịch sử thao tác chỉ lưu trên web → thay đổi lịch sử không cần đẩy lên Google Sheets
   // Lịch sử thao tác chỉ lưu trên web → thay đổi lịch sử không cần đẩy lên Google Sheets
 }
 

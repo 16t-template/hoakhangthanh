@@ -53,7 +53,9 @@ interface DailyRow {
   dailyExport: number; // ảo: từ Đơn hàng
   closingStock: number; // THẬT: người dùng nhập
   calculatedImport: number; // ảo: Tồn cuối + Xuất ngày - Tồn đầu
-  actualImportFromNCC: number; // ảo: từ Đơn nhập NCC
+  actualImportFromNCC: number; // THẬT: người dùng nhập tay trực tiếp, hoặc lấy từ Đơn NCC
+  isNCCManual: boolean; // đánh dấu người dùng đã nhập tay trực tiếp
+  autoNCCImport: number; // số tự động từ đơn NCC nếu có
 }
 
 interface Subtotal {
@@ -119,12 +121,20 @@ interface DailyStockRowProps {
   dateYMD: string;
   item: DailyRow;
   onClosingChange: (dateYMD: string, item: DailyRow, val: number) => void;
+  onNCCChange: (dateYMD: string, item: DailyRow, val: number | undefined) => void;
   onOpenEditOpening: (dateYMD: string, item: DailyRow) => void;
 }
 
 // Dòng hoa: có state riêng cho ô nhập + debounce 300ms nên gõ phím không lag
 const DailyStockRow = React.memo(
-  function DailyStockRow({ idx, dateYMD, item, onClosingChange, onOpenEditOpening }: DailyStockRowProps) {
+  function DailyStockRow({
+    idx,
+    dateYMD,
+    item,
+    onClosingChange,
+    onNCCChange,
+    onOpenEditOpening,
+  }: DailyStockRowProps) {
     const [localVal, setLocalVal] = useState<string>(() => (item.closingStock === 0 ? '' : String(item.closingStock)));
 
     useEffect(() => {
@@ -162,8 +172,57 @@ const DailyStockRow = React.memo(
       debounceTimerRef.current = setTimeout(() => commit(nextNum), 300);
     };
 
-    const hasNCC = item.actualImportFromNCC > 0;
-    const diff = item.actualImportFromNCC - localCalculatedImport;
+    // Ô nhập Thực nhập NCC trực tiếp
+    const [localNCC, setLocalNCC] = useState<string>(() =>
+      item.isNCCManual
+        ? String(item.actualImportFromNCC)
+        : item.autoNCCImport > 0
+        ? String(item.autoNCCImport)
+        : '',
+    );
+
+    useEffect(() => {
+      setLocalNCC(
+        item.isNCCManual
+          ? String(item.actualImportFromNCC)
+          : item.autoNCCImport > 0
+          ? String(item.autoNCCImport)
+          : '',
+      );
+    }, [item.actualImportFromNCC, item.isNCCManual, item.autoNCCImport]);
+
+    const debounceNCCTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const commitNCC = useCallback(
+      (raw: string) => {
+        if (debounceNCCTimerRef.current) {
+          clearTimeout(debounceNCCTimerRef.current);
+          debounceNCCTimerRef.current = null;
+        }
+        const val = raw.trim() === '' ? undefined : Math.max(0, parseInt(raw, 10) || 0);
+        onNCCChange(dateYMD, item, val);
+      },
+      [dateYMD, item, onNCCChange],
+    );
+
+    useEffect(
+      () => () => {
+        if (debounceNCCTimerRef.current) clearTimeout(debounceNCCTimerRef.current);
+      },
+      [],
+    );
+
+    const handleNCCChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const raw = e.target.value.trim();
+      if (raw !== '' && !/^\d+$/.test(raw)) return;
+      setLocalNCC(raw);
+      if (debounceNCCTimerRef.current) clearTimeout(debounceNCCTimerRef.current);
+      debounceNCCTimerRef.current = setTimeout(() => commitNCC(raw), 300);
+    };
+
+    const parsedNCC = localNCC === '' ? (item.isNCCManual ? 0 : item.autoNCCImport) : Math.max(0, parseInt(localNCC, 10) || 0);
+    const hasNCC = item.isNCCManual ? localNCC !== '' : parsedNCC > 0;
+    const diff = (hasNCC ? parsedNCC : 0) - localCalculatedImport;
 
     return (
       <tr className="hover:bg-muted/30 [&>td]:border-b [&>td]:border-border/60">
@@ -209,8 +268,28 @@ const DailyStockRow = React.memo(
         <td className="px-3 py-2 text-right tabular-nums font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50/20 dark:bg-blue-950/10">
           {fmt(localCalculatedImport)}
         </td>
-        <td className="px-3 py-2 text-right tabular-nums font-semibold text-foreground">
-          {hasNCC ? fmt(item.actualImportFromNCC) : <span className="text-muted-foreground">—</span>}
+        <td className="px-2 py-1.5 bg-emerald-50/30 dark:bg-emerald-950/10 text-center">
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={localNCC}
+            placeholder={item.autoNCCImport > 0 ? String(item.autoNCCImport) : '0'}
+            onChange={handleNCCChange}
+            onBlur={() => commitNCC(localNCC)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                commitNCC(localNCC);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            className={`w-20 h-7 text-center font-bold text-xs rounded border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40 ${
+              item.isNCCManual
+                ? 'border-emerald-500 text-emerald-700 dark:text-emerald-300'
+                : 'border-emerald-300/80 dark:border-emerald-700/80'
+            }`}
+            title={item.isNCCManual ? 'Đã nhập tay thực nhập NCC' : 'Nhập tay số lượng NCC thực giao (không cần tạo đơn NCC)'}
+          />
         </td>
         <td className="px-3 py-2 text-center">
           {!hasNCC ? (
@@ -241,9 +320,12 @@ const DailyStockRow = React.memo(
     prev.item.dailyExport === next.item.dailyExport &&
     prev.item.closingStock === next.item.closingStock &&
     prev.item.actualImportFromNCC === next.item.actualImportFromNCC &&
+    prev.item.isNCCManual === next.item.isNCCManual &&
+    prev.item.autoNCCImport === next.item.autoNCCImport &&
     prev.item.flowerCode === next.item.flowerCode &&
     prev.item.flowerName === next.item.flowerName &&
     prev.onClosingChange === next.onClosingChange &&
+    prev.onNCCChange === next.onNCCChange &&
     prev.onOpenEditOpening === next.onOpenEditOpening,
 );
 
@@ -357,6 +439,7 @@ export default function TonNgayPage() {
   const supplierOrders = useSupplierOrderStore((s) => s.orders);
   const records = useDailyStockReconcileStore((s) => s.records);
   const setClosingStock = useDailyStockReconcileStore((s) => s.setClosingStock);
+  const setActualImportNCC = useDailyStockReconcileStore((s) => s.setActualImportNCC);
   const setOpeningStockCustom = useDailyStockReconcileStore((s) => s.setOpeningStockCustom);
 
   const applyQuickRange = (r: QuickRange) => {
@@ -435,7 +518,7 @@ export default function TonNgayPage() {
         if (v > 0) candidates.add(fi);
       });
       savedByFlower.forEach((r, fi) => {
-        if ((r.openingStockCustom ?? 0) > 0) candidates.add(fi);
+        if ((r.openingStockCustom ?? 0) > 0 || (r.closingStock ?? 0) > 0 || (r.actualImportNCC ?? 0) > 0) candidates.add(fi);
       });
 
       const lookup = (m: Map<string, number> | undefined, fl: (typeof flowers)[number]) => {
@@ -455,11 +538,14 @@ export default function TonNgayPage() {
           const isOpeningCustom = rec?.openingStockCustom !== undefined;
           const openingStock = isOpeningCustom ? rec!.openingStockCustom! : lastClosing.get(fi) ?? 0;
           const dailyExport = lookup(orderMap, fl);
-
-          // Chỉ hiện hoa có Tồn đầu > 0 hoặc Xuất ngày > 0
-          if (openingStock <= 0 && dailyExport <= 0) return;
-
           const closingStock = rec?.closingStock ?? 0;
+          const autoNCC = lookup(nccMap, fl);
+          const isNCCManual = rec?.actualImportNCC !== undefined;
+          const actualImportFromNCC = isNCCManual ? (rec?.actualImportNCC ?? 0) : autoNCC;
+
+          // Chỉ hiện hoa có Tồn đầu > 0 hoặc Xuất ngày > 0 hoặc đã nhập Tồn cuối/Thực nhập NCC
+          if (openingStock <= 0 && dailyExport <= 0 && closingStock <= 0 && actualImportFromNCC <= 0) return;
+
           rows.push({
             key: `${dateYMD}_${fl.id}`,
             flowerId: fl.id,
@@ -471,7 +557,9 @@ export default function TonNgayPage() {
             dailyExport,
             closingStock,
             calculatedImport: Math.max(0, closingStock + dailyExport - openingStock),
-            actualImportFromNCC: lookup(nccMap, fl),
+            actualImportFromNCC,
+            isNCCManual,
+            autoNCCImport: autoNCC,
           });
         });
 
@@ -621,6 +709,16 @@ export default function TonNgayPage() {
       });
     },
     [setClosingStock],
+  );
+
+  const handleActualNCCChange = useCallback(
+    (dateYMD: string, item: DailyRow, value: number | undefined) => {
+      setActualImportNCC(dateYMD, item.flowerId, value, {
+        flowerCode: item.flowerCode,
+        flowerName: item.flowerName,
+      });
+    },
+    [setActualImportNCC],
   );
 
   const handleOpenEditOpening = useCallback((dateYMD: string, item: DailyRow) => {
@@ -798,12 +896,13 @@ export default function TonNgayPage() {
       </div>
 
       {/* KPI */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5 shrink-0">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 shrink-0">
         <Kpi label="Số ngày" value={`${grandTotal.dateCount} ngày`} icon={<Calendar size={18} />} tone="muted" />
         <Kpi label="Tổng Tồn đầu" value={fmt(grandTotal.opening)} icon={<RotateCcw size={18} />} tone="muted" />
         <Kpi label="Tổng Xuất ngày" value={fmt(grandTotal.export)} icon={<ShoppingCart size={18} />} tone="rose" />
         <Kpi label="Tổng Tồn cuối" value={fmt(grandTotal.closing)} icon={<ClipboardCheck size={18} />} tone="amber" />
         <Kpi label="Tổng Nhập (tìm ra)" value={fmt(grandTotal.calculatedImport)} icon={<TrendingUp size={18} />} tone="blue" />
+        <Kpi label="Thực nhập NCC" value={fmt(grandTotal.actualNCC)} icon={<Package size={18} />} tone="emerald" />
       </div>
 
       {/* Tìm kiếm + thao tác */}
@@ -854,7 +953,7 @@ export default function TonNgayPage() {
                   <th className="text-right w-28 text-rose-700 dark:text-rose-400">Xuất ngày</th>
                   <th className="text-center w-32 text-amber-800 dark:text-amber-200">Tồn cuối ✎</th>
                   <th className="text-right w-28 text-blue-700 dark:text-blue-400">Nhập</th>
-                  <th className="text-right w-28">Thực nhập NCC</th>
+                  <th className="text-center w-32 text-emerald-800 dark:text-emerald-200">Thực nhập NCC ✎</th>
                   <th className="text-center w-32">Đối soát NCC</th>
                 </tr>
               </thead>
@@ -896,6 +995,7 @@ export default function TonNgayPage() {
                           <span className="text-rose-600">Xuất -{fmt(g.subtotal.export)}</span>
                           <span className="text-amber-700 dark:text-amber-300">Tồn cuối {fmt(g.subtotal.closing)}</span>
                           <span className="text-blue-600">Nhập +{fmt(g.subtotal.calculatedImport)}</span>
+                          <span className="text-emerald-700 dark:text-emerald-400">Thực nhập +{fmt(g.subtotal.actualNCC)}</span>
                         </div>
                       </div>
                     </td>
@@ -907,6 +1007,7 @@ export default function TonNgayPage() {
                       dateYMD={g.dateYMD}
                       item={item}
                       onClosingChange={handleClosingStockChange}
+                      onNCCChange={handleActualNCCChange}
                       onOpenEditOpening={handleOpenEditOpening}
                     />
                   ))}
@@ -1051,6 +1152,7 @@ const KPI_TONES = {
   rose: 'border-rose-200 dark:border-rose-900 bg-rose-50/50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 [&_.ic]:bg-rose-100 dark:[&_.ic]:bg-rose-900/60',
   amber: 'border-amber-200 dark:border-amber-900 bg-amber-50/50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 [&_.ic]:bg-amber-100 dark:[&_.ic]:bg-amber-900/60',
   blue: 'border-blue-200 dark:border-blue-900 bg-blue-50/60 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 [&_.ic]:bg-blue-100 dark:[&_.ic]:bg-blue-900/60',
+  emerald: 'border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300 [&_.ic]:bg-emerald-100 dark:[&_.ic]:bg-emerald-900/60',
 } as const;
 
 function Kpi({ label, value, icon, tone }: { label: string; value: string; icon: React.ReactNode; tone: keyof typeof KPI_TONES }) {

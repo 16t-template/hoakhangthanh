@@ -42,7 +42,7 @@
                 max-width: 100%;
             }
 
-            /* Chế độ in tối giản: Chỉ in STT, tên hoa và số lượng */
+            /* Chế độ in tối giản: Chỉ in V, STT, Tên hoa, SL, Ghi chú theo đúng Ảnh 2 */
             body.print-mode-simple .col-gia,
             body.print-mode-simple .col-tien,
             body.print-mode-simple .summary-container,
@@ -50,26 +50,105 @@
             body.print-mode-simple .logo-box,
             body.print-mode-simple .shop-info,
             body.print-mode-simple .footer-msg,
-            body.print-mode-simple .title-section {
+            body.print-mode-simple .title-section,
+            body.print-mode-simple #sl-summary,
+            body.print-mode-simple .phone-part,
+            body.print-mode-simple .label-ngay-full {
                 display: none !important;
             }
 
-            body.print-mode-simple .invoice-header {
-                border-bottom: none;
-                margin-bottom: 0;
+            body.print-mode-simple .label-ngay-simple {
+                display: inline !important;
             }
 
-            body.print-mode-simple th,
+            body.print-mode-simple .invoice-header {
+                display: none !important;
+            }
+
+            body.print-mode-simple .info-section {
+                border-left: 3px solid #b38b00 !important;
+                padding: 2px 0 2px 12px !important;
+                margin-bottom: 16px !important;
+                background-color: transparent !important;
+                border-radius: 0 !important;
+            }
+
+            body.print-mode-simple #khach-hang-text {
+                text-transform: uppercase !important;
+            }
+
+            body.print-mode-simple th {
+                border-top: 1.5px solid #1e3a8a !important;
+                border-bottom: 1.5px solid #1e3a8a !important;
+                color: #1e3a8a !important;
+                font-weight: 700 !important;
+                text-transform: uppercase !important;
+                font-size: 14px !important;
+                padding: 10px 4px !important;
+            }
+
             body.print-mode-simple td {
-                font-size: 18px;
-                /* Tăng kích thước chữ khi in danh sách */
-                padding: 10px;
+                font-size: 14px !important;
+                padding: 9px 4px !important;
+                border-bottom: 0.5px solid #e2e8f0 !important;
             }
 
             /* Hiện cột tích và ghi chú khi in tối giản */
             body.print-mode-simple .col-tick,
             body.print-mode-simple .col-note {
                 display: table-cell !important;
+            }
+
+            body.print-mode-simple th.col-tick { width: 48px !important; text-align: center !important; }
+            body.print-mode-simple th.col-stt { width: 52px !important; text-align: center !important; }
+            body.print-mode-simple th.col-ten { text-align: center !important; }
+            body.print-mode-simple th.col-sl { width: 70px !important; text-align: center !important; }
+            body.print-mode-simple th.col-note { width: 110px !important; text-align: center !important; }
+
+            body.print-mode-simple td.col-tick { text-align: center !important; }
+            body.print-mode-simple .check-box {
+                appearance: none !important;
+                -webkit-appearance: none !important;
+                width: 16px !important;
+                height: 16px !important;
+                border: 1.5px solid #94a3b8 !important;
+                border-radius: 3px !important;
+                background: #ffffff !important;
+                display: inline-block !important;
+                vertical-align: middle !important;
+            }
+
+            body.print-mode-simple td.col-stt {
+                text-align: center !important;
+                color: #475569 !important;
+                font-weight: 500 !important;
+            }
+
+            body.print-mode-simple td.col-ten {
+                font-weight: 700 !important;
+                text-transform: uppercase !important;
+                color: #0f172a !important;
+                padding-left: 14px !important;
+            }
+
+            body.print-mode-simple td.col-sl {
+                text-align: right !important;
+                padding-right: 20px !important;
+                color: #334155 !important;
+                font-weight: 500 !important;
+                font-size: 14px !important;
+            }
+
+            body.print-mode-simple td.col-note {
+                text-align: left !important;
+                padding-left: 14px !important;
+            }
+
+            body.print-mode-simple .note-input {
+                border: none !important;
+                background: transparent !important;
+                color: #64748b !important;
+                font-size: 13px !important;
             }
         }
 
@@ -523,12 +602,19 @@
         <!-- Info Section -->
         <div class="info-section" id="info-section">
             <p>
-                <span class="text-gray-600">Ngày đặt:</span> <span class="font-bold" id="ngay-text"></span>
+                <span class="text-gray-600">
+                    <span class="label-ngay-full">Ngày đặt:</span>
+                    <span class="label-ngay-simple" style="display:none;">Ngày:</span>
+                </span>
+                <span class="font-bold" id="ngay-text"></span>
                 <span id="sl-summary" style="margin-left: 20px;">
                     <span class="text-gray-600">Tổng SL:</span> <span class="font-bold" id="tong-sl-text">0 cành/bó</span>
                 </span>
             </p>
-            <p><span class="text-gray-600">Khách hàng:</span> <span class="font-bold" id="khach-hang-text"></span></p>
+            <p>
+                <span class="text-gray-600">Khách hàng:</span>
+                <span class="font-bold" id="khach-hang-text"></span><span id="phone-display" class="phone-part text-gray-600 font-mono"></span>
+            </p>
         </div>
 
         <!-- Table Section -->
@@ -650,11 +736,11 @@
             }
 
             document.getElementById('ngay-text').innerText = ngay;
-            let khachHangDisplay = khachHang;
-            if (phone) {
-                khachHangDisplay += ' • ' + phone;
+            document.getElementById('khach-hang-text').innerText = khachHang;
+            const phoneEl = document.getElementById('phone-display');
+            if (phone && phoneEl) {
+                phoneEl.innerText = ' • ' + phone;
             }
-            document.getElementById('khach-hang-text').innerText = khachHangDisplay;
 
             const products = [];
             if (productsRaw) {

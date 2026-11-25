@@ -1,7 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { useMemo } from 'react';
 import { toast } from 'sonner';
 import { useEmployeeStore } from './hoaKhangThanhStore';
+import { useAuthStore, isUserAdmin } from './auth';
 
 export type PermissionAction = 'view' | 'create' | 'edit' | 'delete';
 
@@ -73,6 +75,7 @@ export interface ModuleDefinition {
 }
 
 export const PERMISSION_GROUPS = [
+  { id: 'tongQuan', name: 'Tổng quan' },
   { id: 'banHang', name: 'Bán hàng & Khách hàng' },
   { id: 'muaHang', name: 'Mua hàng & Nhà vườn' },
   { id: 'khoHoa', name: 'Kho hoa & Sản phẩm' },
@@ -81,6 +84,8 @@ export const PERMISSION_GROUPS = [
 ] as const;
 
 export const MODULE_LIST: ModuleDefinition[] = [
+  // Tổng quan
+  { id: 'dashboard', name: 'Dashboard', description: 'Tổng quan doanh số, đơn hàng, tồn kho và hoạt động kinh doanh', group: 'tongQuan', groupName: 'Tổng quan' },
   // Bán hàng
   { id: 'donHang', name: 'Đơn đặt hàng sỉ', description: 'Tạo đơn đặt hoa, lên toa, in hoá đơn, giao hàng', group: 'banHang', groupName: 'Bán hàng & Khách hàng' },
   { id: 'npp', name: 'Nhà phân phối (NPP)', description: 'Danh mục đại lý sỉ, shop hoa, lịch sử mua hàng', group: 'banHang', groupName: 'Bán hàng & Khách hàng' },
@@ -92,6 +97,7 @@ export const MODULE_LIST: ModuleDefinition[] = [
   // Kho hoa
   { id: 'hoa', name: 'Danh mục giống hoa & Giá', description: 'Bảng giá hoa tươi sỉ, phân loại, màu sắc, xuất xứ', group: 'khoHoa', groupName: 'Kho hoa & Sản phẩm' },
   { id: 'tonKho', name: 'Tồn kho lạnh', description: 'Kiểm kê kho lạnh hoa tươi, xuất nhập tồn, hao hụt', group: 'khoHoa', groupName: 'Kho hoa & Sản phẩm' },
+  { id: 'tonNgay', name: 'Tồn ngày & Đối soát', description: 'Kiểm tồn cuối ngày, nhập/xuất ngày và đối soát với đơn hàng', group: 'khoHoa', groupName: 'Kho hoa & Sản phẩm' },
   // Tài chính
   { id: 'thuChi', name: 'Sổ quỹ Thu - Chi', description: 'Phiếu thu, phiếu chi tiền mặt, dòng tiền hằng ngày', group: 'taiChinh', groupName: 'Tài chính & Kế toán' },
   { id: 'congNoTongHop', name: 'Tổng hợp công nợ', description: 'Đối chiếu công nợ 2 chiều, báo cáo nợ quá hạn', group: 'taiChinh', groupName: 'Tài chính & Kế toán' },
@@ -128,11 +134,13 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     name: 'Nhân viên Kinh doanh / Bán hàng',
     description: 'Tạo và quản lý đơn đặt hoa sỉ, xem giá bán. Tự động ẩn cột Giá vốn, TT Nhập và Lợi nhuận để bảo mật.',
     permissions: {
+      dashboard: { view: true, create: true, edit: true, delete: true },
       donHang: { view: true, create: true, edit: true, delete: false },
       npp: { view: true, create: true, edit: true, delete: false },
       congNoNPP: { view: true, create: false, edit: false, delete: false },
       hoa: { view: true, create: false, edit: false, delete: false },
       tonKho: { view: true, create: false, edit: false, delete: false },
+      tonNgay: { view: true, create: false, edit: false, delete: false },
       ncc: { view: false, create: false, edit: false, delete: false },
       donHangNCC: { view: false, create: false, edit: false, delete: false },
       congNoNCC: { view: false, create: false, edit: false, delete: false },
@@ -161,7 +169,9 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     name: 'Quản lý Kho & Vận chuyển',
     description: 'Chỉ xem mặt hàng và số lượng hoa để soạn đơn giao hàng. Ẩn toàn bộ giá nhập, giá bán và lợi nhuận.',
     permissions: {
+      dashboard: { view: true, create: false, edit: false, delete: false },
       tonKho: { view: true, create: true, edit: true, delete: true },
+      tonNgay: { view: true, create: true, edit: true, delete: false },
       hoa: { view: true, create: true, edit: true, delete: false },
       donHangNCC: { view: true, create: true, edit: true, delete: false },
       ncc: { view: true, create: false, edit: false, delete: false },
@@ -194,6 +204,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
     name: 'Kế toán & Thu quỹ',
     description: 'Toàn quyền Thu - Chi, đối soát công nợ. Xem đầy đủ các cột giá vốn, giá bán, thành tiền và lợi nhuận.',
     permissions: {
+      dashboard: { view: true, create: false, edit: false, delete: false },
       thuChi: { view: true, create: true, edit: true, delete: false },
       congNoNPP: { view: true, create: true, edit: true, delete: false },
       congNoNCC: { view: true, create: true, edit: true, delete: false },
@@ -202,6 +213,7 @@ export const ROLE_TEMPLATES: RoleTemplate[] = [
       donHangNCC: { view: true, create: false, edit: false, delete: false },
       hoa: { view: true, create: false, edit: false, delete: false },
       tonKho: { view: true, create: false, edit: false, delete: false },
+      tonNgay: { view: true, create: false, edit: false, delete: false },
       npp: { view: true, create: false, edit: false, delete: false },
       ncc: { view: true, create: false, edit: false, delete: false },
       nhanVien: { view: true, create: false, edit: false, delete: false },
@@ -237,6 +249,8 @@ interface PermissionStoreState {
   toggleModuleRow: (employeeId: string, moduleId: string, allValue: boolean) => void;
   toggleColumn: (employeeId: string, action: PermissionAction | 'all', value: boolean) => void;
   toggleModuleForEmployee: (moduleId: string, employeeId: string, action: PermissionAction, explicitValue?: boolean) => void;
+  enableAllRights: (employeeId: string) => void;
+  disableAllRights: (employeeId: string) => void;
   
   // Thao tác phân quyền bảng chi tiết đơn hàng (Xem, Thêm, Sửa, Xóa & Từng cột 1)
   toggleOrderItemAction: (employeeId: string, action: PermissionAction, explicitValue?: boolean) => void;
@@ -269,19 +283,42 @@ export const usePermissionStore = create<PermissionStoreState>()(
 
       getRights: (employeeId: string, moduleId: string): ActionRights => {
         const state = get();
-        // Nếu là admin mặc định
-        if (employeeId === 'nv-admin' || employeeId === 'NV-001') {
+        // 1. Kiểm tra Admin mặc định hoặc qua role/chức vụ
+        if (employeeId === 'nv-admin' || employeeId === 'NV-001' || employeeId === 'admin') {
           return { view: true, create: true, edit: true, delete: true };
         }
-        const userPerms = state.permissions[employeeId];
-        if (userPerms && userPerms[moduleId]) {
-          return userPerms[moduleId];
-        }
-        // Fallback về quyền mặc định chung
+        try {
+          const emp = useEmployeeStore.getState().employees.find(
+            (e) => e.id === employeeId || e.code === employeeId || e.username === employeeId
+          );
+          if (
+            emp &&
+            (emp.role === 'admin' ||
+              emp.department?.includes('Quản trị') ||
+              emp.position?.includes('Giám đốc') ||
+              emp.code === 'NV-001')
+          ) {
+            return { view: true, create: true, edit: true, delete: true };
+          }
+
+          // 2. Tra cứu cấu hình riêng của nhân viên theo ID hoặc Code
+          const userPerms =
+            state.permissions[employeeId] ||
+            (emp?.id ? state.permissions[emp.id] : undefined) ||
+            (emp?.code ? state.permissions[emp.code] : undefined);
+
+          if (userPerms && userPerms[moduleId]) {
+            return userPerms[moduleId];
+          }
+        } catch {}
+
+        // 3. Fallback về cấu hình mặc định chung __default__
         const defaultPerms = state.permissions[DEFAULT_EMPLOYEE_ID];
         if (defaultPerms && defaultPerms[moduleId]) {
           return defaultPerms[moduleId];
         }
+
+        // 4. Mặc định toàn quyền
         return { view: true, create: true, edit: true, delete: true };
       },
 
@@ -408,6 +445,36 @@ export const usePermissionStore = create<PermissionStoreState>()(
 
       toggleModuleForEmployee: (moduleId: string, employeeId: string, action: PermissionAction, explicitValue?: boolean) => {
         get().toggleRight(employeeId, moduleId, action, explicitValue);
+      },
+
+      enableAllRights: (employeeId: string) => {
+        set((state) => {
+          const userPerms: Record<string, ActionRights> = {};
+          MODULE_LIST.forEach((m) => {
+            userPerms[m.id] = { view: true, create: true, edit: true, delete: true };
+          });
+          return {
+            permissions: {
+              ...state.permissions,
+              [employeeId]: userPerms,
+            },
+          };
+        });
+      },
+
+      disableAllRights: (employeeId: string) => {
+        set((state) => {
+          const userPerms: Record<string, ActionRights> = {};
+          MODULE_LIST.forEach((m) => {
+            userPerms[m.id] = { view: false, create: false, edit: false, delete: false };
+          });
+          return {
+            permissions: {
+              ...state.permissions,
+              [employeeId]: userPerms,
+            },
+          };
+        });
       },
 
       toggleOrderItemAction: (employeeId: string, action: PermissionAction, explicitValue?: boolean) => {
@@ -601,6 +668,19 @@ export const usePermissionStore = create<PermissionStoreState>()(
 
       resetToDefault: (employeeId: string) => {
         set((state) => {
+          if (employeeId === DEFAULT_EMPLOYEE_ID) {
+            toast.success('Đã khôi phục quyền mặc định hệ thống thành công.');
+            return {
+              permissions: {
+                ...state.permissions,
+                [DEFAULT_EMPLOYEE_ID]: { ...DEFAULT_GLOBAL_PERMISSIONS },
+              },
+              orderItemPermissions: {
+                ...state.orderItemPermissions,
+                [DEFAULT_EMPLOYEE_ID]: { ...DEFAULT_ORDER_ITEM_SETTING },
+              },
+            };
+          }
           const next = { ...state.permissions };
           delete next[employeeId];
           const nextItems = { ...state.orderItemPermissions };
@@ -618,6 +698,51 @@ export const usePermissionStore = create<PermissionStoreState>()(
     }),
     {
       name: 'hoa_khang_thanh_permissions',
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        // Tự động khôi phục nếu __default__ bị rỗng hoặc toàn bộ bị tắt (do click nhầm checkbox header)
+        const def = state.permissions?.[DEFAULT_EMPLOYEE_ID];
+        if (!def || Object.keys(def).length === 0) {
+          state.permissions = {
+            ...state.permissions,
+            [DEFAULT_EMPLOYEE_ID]: { ...DEFAULT_GLOBAL_PERMISSIONS },
+          };
+        } else {
+          const hasAnyView = Object.values(def).some((r) => r.view);
+          if (!hasAnyView) {
+            state.permissions = {
+              ...state.permissions,
+              [DEFAULT_EMPLOYEE_ID]: { ...DEFAULT_GLOBAL_PERMISSIONS },
+            };
+          }
+        }
+      },
     }
   )
 );
+
+/**
+ * Hook tiện ích kiểm tra nhanh quyền thao tác của người dùng hiện tại đối với 1 module:
+ * - view: Quyền xem giao diện module
+ * - create: Quyền thêm mới bản ghi
+ * - edit: Quyền chỉnh sửa bản ghi
+ * - delete: Quyền xóa bản ghi
+ * - isAdmin: Có phải là Quản trị viên không
+ */
+export function useUserPermissions(moduleId: string) {
+  const user = useAuthStore((s) => s.user);
+  const getRights = usePermissionStore((s) => s.getRights);
+  const permissions = usePermissionStore((s) => s.permissions);
+
+  return useMemo(() => {
+    if (!user) {
+      return { view: true, create: true, edit: true, delete: true, isAdmin: false };
+    }
+    const isAdmin = isUserAdmin(user);
+    if (isAdmin) {
+      return { view: true, create: true, edit: true, delete: true, isAdmin: true };
+    }
+    const rights = getRights(user.id, moduleId);
+    return { ...rights, isAdmin: false };
+  }, [user, getRights, permissions, moduleId]);
+}

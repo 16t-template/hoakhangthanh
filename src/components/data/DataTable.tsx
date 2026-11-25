@@ -316,6 +316,11 @@ export function DataTable<T>({
     return [...data].sort((a, b) => {
       const valA = getRowValue(a, colId);
       const valB = getRowValue(b, colId);
+      const isAEmpty = valA === undefined || valA === null || valA === '';
+      const isBEmpty = valB === undefined || valB === null || valB === '';
+      if (isAEmpty && isBEmpty) return 0;
+      if (isAEmpty) return 1;
+      if (isBEmpty) return -1;
       const res = compareValues(valA, valB);
       return dir === 'asc' ? res : -res;
     });

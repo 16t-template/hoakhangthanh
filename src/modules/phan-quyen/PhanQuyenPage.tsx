@@ -1,8 +1,13 @@
 import { useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users,
   Grid,
   ShieldCheck,
+  ShieldAlert,
+  Home,
+  CheckSquare,
+  XSquare,
   Search,
   Copy,
   RotateCcw,
@@ -28,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useEmployeeStore } from '@/stores/hoaKhangThanhStore';
+import { useAuthStore, isUserAdmin } from '@/stores/auth';
 import {
   usePermissionStore,
   MODULE_LIST,
@@ -35,12 +41,17 @@ import {
   ROLE_TEMPLATES,
   DEFAULT_EMPLOYEE_ID,
   ORDER_DETAIL_COLUMNS_CONFIG,
+  type PermissionAction,
 } from '@/stores/permissionStore';
 import { toast } from 'sonner';
 
 type ActiveTab = 'by-employee' | 'by-module' | 'roles' | 'order-detail';
 
 export default function PhanQuyenPage() {
+  const currentUser = useAuthStore((s) => s.user);
+  const userIsAdmin = isUserAdmin(currentUser);
+  const navigate = useNavigate();
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('by-employee');
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [moduleSearch, setModuleSearch] = useState('');
@@ -65,6 +76,8 @@ export default function PhanQuyenPage() {
     toggleRight,
     toggleModuleRow,
     toggleColumn,
+    enableAllRights,
+    disableAllRights,
     copyPermissions,
     applyRole,
     resetToDefault,
@@ -79,6 +92,24 @@ export default function PhanQuyenPage() {
     applyRoleToOrderItem,
     resetOrderItemToDefault,
   } = usePermissionStore();
+
+  // Access guard: Chỉ Quản trị viên (Admin) mới có quyền truy cập
+  if (!userIsAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] p-6 text-center">
+        <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950/60 dark:text-rose-400 flex items-center justify-center mb-4 shadow-sm border border-rose-200 dark:border-rose-900">
+          <ShieldAlert size={32} />
+        </div>
+        <h2 className="text-xl font-bold text-foreground mb-2">Truy cập bị từ chối</h2>
+        <p className="text-sm text-muted-foreground max-w-md mb-6 leading-relaxed">
+          Module <strong>Phân quyền hệ thống</strong> chỉ dành riêng cho Quản trị viên (Admin). Tài khoản <strong>{currentUser?.full_name || 'của bạn'}</strong> ({currentUser?.role === 'member' ? 'Nhân viên / Member' : currentUser?.role}) không có quyền truy cập trang này.
+        </p>
+        <Button onClick={() => navigate('/')} className="gap-2 bg-primary text-primary-foreground">
+          <Home size={15} /> Quay về Trang chủ
+        </Button>
+      </div>
+    );
+  }
 
   // Danh sách nhân viên lọc theo tìm kiếm
   const filteredEmployees = useMemo(() => {
@@ -168,6 +199,31 @@ export default function PhanQuyenPage() {
     }
     return count;
   };
+
+  // Tính toán trạng thái checked và indeterminate cho các checkbox tiêu đề cột
+  const columnCheckStates = useMemo(() => {
+    const checkState = (action: PermissionAction) => {
+      const count = MODULE_LIST.filter((m) => getRights(selectedEmployeeId, m.id)[action]).length;
+      return {
+        checked: count === MODULE_LIST.length && count > 0,
+        indeterminate: count > 0 && count < MODULE_LIST.length,
+      };
+    };
+    const allCount = MODULE_LIST.filter((m) => {
+      const r = getRights(selectedEmployeeId, m.id);
+      return r.view && r.create && r.edit && r.delete;
+    }).length;
+    return {
+      view: checkState('view'),
+      create: checkState('create'),
+      edit: checkState('edit'),
+      delete: checkState('delete'),
+      all: {
+        checked: allCount === MODULE_LIST.length && allCount > 0,
+        indeterminate: allCount > 0 && allCount < MODULE_LIST.length,
+      },
+    };
+  }, [selectedEmployeeId, permissions, getRights]);
 
   // Xử lý sao chép quyền
   const handleCopy = () => {
@@ -412,60 +468,88 @@ export default function PhanQuyenPage() {
                   )}
                 </div>
 
-                {selectedEmployeeId !== DEFAULT_EMPLOYEE_ID && (
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={copySourceId}
-                      onChange={(e) => setCopySourceId(e.target.value)}
-                      className="text-xs h-8 px-2 border border-border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      <option value="">-- Sao chép quyền từ --</option>
-                      <option value={DEFAULT_EMPLOYEE_ID}>Mặc định hệ thống</option>
-                      <optgroup label="Vai trò mẫu">
-                        {ROLE_TEMPLATES.map((r) => (
-                          <option key={r.id} value={`role:${r.id}`}>
-                            Mẫu: {r.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Nhân viên khác">
-                        {employees
-                          .filter((e) => e.id !== selectedEmployeeId)
-                          .map((e) => (
-                            <option key={e.id} value={e.id}>
-                              {e.fullName} ({e.code})
+                <div className="flex items-center flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => enableAllRights(selectedEmployeeId)}
+                    disabled={currentEmployee?.isAdmin}
+                    className="text-xs h-8 gap-1.5 text-emerald-600 border-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 font-medium"
+                    title="Bật toàn bộ quyền Xem, Thêm, Sửa, Xóa cho tất cả module"
+                  >
+                    <CheckSquare size={13} />
+                    Bật tất cả quyền
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => disableAllRights(selectedEmployeeId)}
+                    disabled={currentEmployee?.isAdmin}
+                    className="text-xs h-8 gap-1.5 text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-medium"
+                    title="Tắt toàn bộ quyền cho tất cả module"
+                  >
+                    <XSquare size={13} />
+                    Tắt tất cả
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => resetToDefault(selectedEmployeeId)}
+                    disabled={currentEmployee?.isAdmin}
+                    className="text-xs h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+                    title={selectedEmployeeId === DEFAULT_EMPLOYEE_ID ? "Khôi phục toàn bộ quyền mặc định hệ thống" : "Hủy cấu hình riêng, theo quyền mặc định"}
+                  >
+                    <RotateCcw size={13} />
+                    {selectedEmployeeId === DEFAULT_EMPLOYEE_ID ? "Khôi phục mặc định" : "Theo mặc định"}
+                  </Button>
+
+                  {selectedEmployeeId !== DEFAULT_EMPLOYEE_ID && !currentEmployee?.isAdmin && (
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-border">
+                      <select
+                        value={copySourceId}
+                        onChange={(e) => setCopySourceId(e.target.value)}
+                        className="text-xs h-8 px-2 border border-border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="">-- Sao chép quyền từ --</option>
+                        <option value={DEFAULT_EMPLOYEE_ID}>Mặc định hệ thống</option>
+                        <optgroup label="Vai trò mẫu">
+                          {ROLE_TEMPLATES.map((r) => (
+                            <option key={r.id} value={`role:${r.id}`}>
+                              Mẫu: {r.name}
                             </option>
                           ))}
-                      </optgroup>
-                    </select>
+                        </optgroup>
+                        <optgroup label="Nhân viên khác">
+                          {employees
+                            .filter((e) => e.id !== selectedEmployeeId)
+                            .map((e) => (
+                              <option key={e.id} value={e.id}>
+                                {e.fullName} ({e.code})
+                              </option>
+                            ))}
+                        </optgroup>
+                      </select>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        if (copySourceId.startsWith('role:')) {
-                          applyRole(selectedEmployeeId, copySourceId.replace('role:', ''));
-                        } else {
-                          handleCopy();
-                        }
-                      }}
-                      className="text-xs h-8 gap-1"
-                    >
-                      <Copy size={13} />
-                      Chép
-                    </Button>
-
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => resetToDefault(selectedEmployeeId)}
-                      className="text-xs h-8 gap-1 text-muted-foreground hover:text-foreground"
-                    >
-                      <RotateCcw size={13} />
-                      Theo mặc định
-                    </Button>
-                  </div>
-                )}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          if (copySourceId.startsWith('role:')) {
+                            applyRole(selectedEmployeeId, copySourceId.replace('role:', ''));
+                          } else {
+                            handleCopy();
+                          }
+                        }}
+                        className="text-xs h-8 gap-1"
+                      >
+                        <Copy size={13} />
+                        Chép
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Matrix Table */}
@@ -480,8 +564,13 @@ export default function PhanQuyenPage() {
                         <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
                           <input
                             type="checkbox"
-                            className="rounded border-border text-primary focus:ring-0 cursor-pointer"
+                            checked={columnCheckStates.view.checked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = columnCheckStates.view.indeterminate;
+                            }}
                             onChange={(e) => toggleColumn(selectedEmployeeId, 'view', e.target.checked)}
+                            disabled={currentEmployee?.isAdmin}
+                            className="rounded border-border text-primary focus:ring-0 cursor-pointer accent-primary"
                           />
                           <span>Xem</span>
                         </label>
@@ -490,8 +579,13 @@ export default function PhanQuyenPage() {
                         <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
                           <input
                             type="checkbox"
-                            className="rounded border-border text-primary focus:ring-0 cursor-pointer"
+                            checked={columnCheckStates.create.checked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = columnCheckStates.create.indeterminate;
+                            }}
                             onChange={(e) => toggleColumn(selectedEmployeeId, 'create', e.target.checked)}
+                            disabled={currentEmployee?.isAdmin}
+                            className="rounded border-border text-primary focus:ring-0 cursor-pointer accent-primary"
                           />
                           <span>Thêm</span>
                         </label>
@@ -500,8 +594,13 @@ export default function PhanQuyenPage() {
                         <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
                           <input
                             type="checkbox"
-                            className="rounded border-border text-primary focus:ring-0 cursor-pointer"
+                            checked={columnCheckStates.edit.checked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = columnCheckStates.edit.indeterminate;
+                            }}
                             onChange={(e) => toggleColumn(selectedEmployeeId, 'edit', e.target.checked)}
+                            disabled={currentEmployee?.isAdmin}
+                            className="rounded border-border text-primary focus:ring-0 cursor-pointer accent-primary"
                           />
                           <span>Sửa</span>
                         </label>
@@ -510,8 +609,13 @@ export default function PhanQuyenPage() {
                         <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
                           <input
                             type="checkbox"
-                            className="rounded border-border text-primary focus:ring-0 cursor-pointer"
+                            checked={columnCheckStates.delete.checked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = columnCheckStates.delete.indeterminate;
+                            }}
                             onChange={(e) => toggleColumn(selectedEmployeeId, 'delete', e.target.checked)}
+                            disabled={currentEmployee?.isAdmin}
+                            className="rounded border-border text-primary focus:ring-0 cursor-pointer accent-primary"
                           />
                           <span>Xóa</span>
                         </label>
@@ -520,8 +624,13 @@ export default function PhanQuyenPage() {
                         <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
                           <input
                             type="checkbox"
-                            className="rounded border-border text-primary focus:ring-0 cursor-pointer"
+                            checked={columnCheckStates.all.checked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = columnCheckStates.all.indeterminate;
+                            }}
                             onChange={(e) => toggleColumn(selectedEmployeeId, 'all', e.target.checked)}
+                            disabled={currentEmployee?.isAdmin}
+                            className="rounded border-border text-primary focus:ring-0 cursor-pointer accent-primary"
                           />
                           <span>Tất cả</span>
                         </label>
@@ -566,7 +675,8 @@ export default function PhanQuyenPage() {
                                 <td className="px-3 py-3 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={rights.view}
+                                    checked={currentEmployee?.isAdmin ? true : rights.view}
+                                    disabled={currentEmployee?.isAdmin}
                                     onChange={(e) =>
                                       toggleRight(selectedEmployeeId, mod.id, 'view', e.target.checked)
                                     }
@@ -578,7 +688,8 @@ export default function PhanQuyenPage() {
                                 <td className="px-3 py-3 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={rights.create}
+                                    checked={currentEmployee?.isAdmin ? true : rights.create}
+                                    disabled={currentEmployee?.isAdmin}
                                     onChange={(e) =>
                                       toggleRight(selectedEmployeeId, mod.id, 'create', e.target.checked)
                                     }
@@ -590,7 +701,8 @@ export default function PhanQuyenPage() {
                                 <td className="px-3 py-3 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={rights.edit}
+                                    checked={currentEmployee?.isAdmin ? true : rights.edit}
+                                    disabled={currentEmployee?.isAdmin}
                                     onChange={(e) =>
                                       toggleRight(selectedEmployeeId, mod.id, 'edit', e.target.checked)
                                     }
@@ -602,7 +714,8 @@ export default function PhanQuyenPage() {
                                 <td className="px-3 py-3 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={rights.delete}
+                                    checked={currentEmployee?.isAdmin ? true : rights.delete}
+                                    disabled={currentEmployee?.isAdmin}
                                     onChange={(e) =>
                                       toggleRight(selectedEmployeeId, mod.id, 'delete', e.target.checked)
                                     }
@@ -614,7 +727,8 @@ export default function PhanQuyenPage() {
                                 <td className="px-3 py-3 text-center">
                                   <input
                                     type="checkbox"
-                                    checked={isAll}
+                                    checked={currentEmployee?.isAdmin ? true : isAll}
+                                    disabled={currentEmployee?.isAdmin}
                                     onChange={(e) =>
                                       toggleModuleRow(selectedEmployeeId, mod.id, e.target.checked)
                                     }

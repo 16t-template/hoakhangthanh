@@ -20,6 +20,7 @@ const CongNoNCCPage = lazy(pageLoaders.congNoNcc);
 const ThuChiPage = lazy(pageLoaders.thuChi);
 const NhanVienPage = lazy(pageLoaders.nhanVien);
 const PhanQuyenPage = lazy(pageLoaders.phanQuyen);
+const CaiDatPage = lazy(pageLoaders.caiDat);
 
 const PAGE_FALLBACK = (
   <div className="flex-1 flex items-center justify-center py-20">
@@ -93,6 +94,7 @@ export default function App() {
             <Route path="/thu-chi" element={<ThuChiPage />} />
             <Route path="/nhan-vien" element={<NhanVienPage />} />
             <Route path="/phan-quyen" element={<PhanQuyenPage />} />
+            <Route path="/cai-dat" element={<CaiDatPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

@@ -25,6 +25,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { ListToolbar } from '@/components/data/ListToolbar';
 import { DataTable } from '@/components/data/DataTable';
 import type { ColumnDef } from '@/stores/createListStore';
+import { useUserPermissions } from '@/stores/permissionStore';
 import {
   clearAllDebtAndOrderData,
   syncAllOrdersToDebtRecords,
@@ -78,6 +79,7 @@ const NCC_COLUMNS: ColumnDef[] = [
 ];
 
 export default function CongNoPage() {
+  const perms = useUserPermissions('congNoNPP');
   // Dòng ảo từ Đơn hàng / Đơn nhập NCC + dòng nhập tay đã lưu
   const records = useAllDebtRecords();
   const { records: manualRecords, deleteRecord } = useDebtStore();
@@ -493,12 +495,20 @@ export default function CongNoPage() {
   };
 
   const handleAddNew = () => {
+    if (!perms.create) {
+      toast.error('Bạn không có quyền thêm mới công nợ!');
+      return;
+    }
     setSelectedRecord(null);
     setDrawerMode('create');
     setIsDrawerOpen(true);
   };
 
   const handleEdit = (r: DebtDailyRecord) => {
+    if (!perms.edit) {
+      toast.error('Bạn không có quyền chỉnh sửa công nợ!');
+      return;
+    }
     if (isLocked(r)) {
       toast.info(lockedMessage(r));
       return;
@@ -519,6 +529,10 @@ export default function CongNoPage() {
   };
 
   const handleDelete = (r: DebtDailyRecord) => {
+    if (!perms.delete) {
+      toast.error('Bạn không có quyền xóa công nợ!');
+      return;
+    }
     if (isLocked(r)) {
       toast.info(lockedMessage(r));
       return;
@@ -726,22 +740,26 @@ export default function CongNoPage() {
         }
         return (
           <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => handleEdit(row)}
-              className="p-1 rounded text-primary hover:bg-primary/10 transition-colors"
-              title="Chỉnh sửa"
-            >
-              <SquarePen size={14} />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDelete(row)}
-              className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
-              title="Xóa"
-            >
-              <Trash2 size={14} />
-            </button>
+            {perms.edit && (
+              <button
+                type="button"
+                onClick={() => handleEdit(row)}
+                className="p-1 rounded text-primary hover:bg-primary/10 transition-colors"
+                title="Chỉnh sửa"
+              >
+                <SquarePen size={14} />
+              </button>
+            )}
+            {perms.delete && (
+              <button
+                type="button"
+                onClick={() => handleDelete(row)}
+                className="p-1 rounded text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                title="Xóa"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         );
       default:
@@ -882,6 +900,20 @@ export default function CongNoPage() {
     });
   }, [records]);
 
+  if (!perms.view) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
+        <div className="w-14 h-14 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 flex items-center justify-center mb-4">
+          <Receipt size={28} />
+        </div>
+        <h2 className="text-lg font-bold text-foreground mb-1">Chưa được cấp quyền xem Công nợ NPP</h2>
+        <p className="text-sm text-muted-foreground max-w-md">
+          Tài khoản của bạn hiện chưa được Quản trị viên cấp quyền xem dữ liệu Công nợ Nhà phân phối. Vui lòng liên hệ Admin để được phân quyền.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-background">
       {/* Header Tabs */}
@@ -897,25 +929,27 @@ export default function CongNoPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 self-end sm:self-auto">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (
-                  window.confirm(
-                    'Bạn có chắc chắn muốn xóa toàn bộ bản ghi công nợ và đưa số liệu công nợ về 0 để nhập lại từ đầu không?'
-                  )
-                ) {
-                  clearAllDebtAndOrderData();
-                  toast.success('Đã xóa sạch công nợ và đưa toàn bộ số liệu về 0 để bạn điền lại từ đầu!');
-                }
-              }}
-              className="gap-1.5 text-xs h-8 text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-              title="Xóa sạch toàn bộ công nợ và đưa tất cả số liệu về 0"
-            >
-              <Trash2 size={14} /> Xóa sạch công nợ (Về 0)
-            </Button>
+            {perms.delete && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      'Bạn có chắc chắn muốn xóa toàn bộ bản ghi công nợ và đưa số liệu công nợ về 0 để nhập lại từ đầu không?'
+                    )
+                  ) {
+                    clearAllDebtAndOrderData();
+                    toast.success('Đã xóa sạch công nợ và đưa toàn bộ số liệu về 0 để bạn điền lại từ đầu!');
+                  }
+                }}
+                className="gap-1.5 text-xs h-8 text-rose-600 border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                title="Xóa sạch toàn bộ công nợ và đưa tất cả số liệu về 0"
+              >
+                <Trash2 size={14} /> Xóa sạch công nợ (Về 0)
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -935,14 +969,16 @@ export default function CongNoPage() {
             >
               <RefreshCw size={13} /> Đồng bộ từ đơn hàng
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleAddNew}
-              className="gap-1.5 text-xs h-8"
-            >
-              <Plus size={14} /> Thêm phát sinh công nợ
-            </Button>
+            {perms.create && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleAddNew}
+                className="gap-1.5 text-xs h-8"
+              >
+                <Plus size={14} /> Thêm phát sinh công nợ
+              </Button>
+            )}
           </div>
         </div>
 
@@ -1336,7 +1372,7 @@ export default function CongNoPage() {
             onUpdateColumn={handleUpdateColumn}
             onReorderColumns={handleReorderColumns}
             onResetColumns={handleResetColumns}
-            onAdd={handleAddNew}
+            onAdd={perms.create ? handleAddNew : undefined}
           />
 
           {/* Main DataTable */}
@@ -1361,9 +1397,11 @@ export default function CongNoPage() {
               emptyTitle={`Chưa có bản ghi công nợ nào ${dateFilterMode !== 'all' ? 'trong khoảng thời gian này' : ''}`}
               emptyDescription="Bấm 'Thêm phát sinh công nợ' để ghi nhận tiền bán/nhập hoa và thu/trả nợ theo ngày"
               emptyAction={
-                <Button size="sm" onClick={handleAddNew} className="gap-1.5 mt-2">
-                  <Plus size={14} /> Thêm phát sinh công nợ
-                </Button>
+                perms.create ? (
+                  <Button size="sm" onClick={handleAddNew} className="gap-1.5 mt-2">
+                    <Plus size={14} /> Thêm phát sinh công nợ
+                  </Button>
+                ) : undefined
               }
             />
           </div>

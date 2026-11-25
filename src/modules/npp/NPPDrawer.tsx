@@ -85,7 +85,7 @@ export function NPPDrawer({ isOpen, onClose, distributor, mode = 'create' }: Pro
   // Get orders of this NPP from useOrderStore
   const nppOrders = useMemo(() => {
     if (!distributor) return [];
-    return orders.filter((o) => {
+    const matchedOrders = orders.filter((o) => {
       const matchId = o.distributorId === distributor.id;
       const matchName =
         o.distributorName &&
@@ -97,6 +97,24 @@ export function NPPDrawer({ isOpen, onClose, distributor, mode = 'create' }: Pro
         distributor.phone &&
         o.phone.replace(/\s+/g, '') === distributor.phone.replace(/\s+/g, '');
       return matchId || matchName || matchPhone;
+    });
+
+    // Hiển thị đơn mới nhất trước (ngày giảm dần), cùng ngày thì mã đơn mới hơn trước.
+    const getOrderDateValue = (value?: string) => {
+      const raw = (value || '').trim();
+      const slash = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slash) return Date.UTC(Number(slash[3]), Number(slash[2]) - 1, Number(slash[1]));
+      const iso = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (iso) return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+      const parsed = Date.parse(raw);
+      return Number.isNaN(parsed) ? 0 : parsed;
+    };
+
+    return matchedOrders.sort((a, b) => {
+      const dateA = getOrderDateValue(a.orderDate);
+      const dateB = getOrderDateValue(b.orderDate);
+      if (dateA !== dateB) return dateB - dateA;
+      return (b.code || b.id).localeCompare(a.code || a.id, undefined, { numeric: true });
     });
   }, [orders, distributor]);
 

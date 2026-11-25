@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleSheetsApi, resolveSheetsConfig, type SheetsEnv } from './sheetsCore.js';
+import { applySpreadsheetOverride, handleSheetsApi, resolveSheetsConfig, type SheetsEnv } from './sheetsCore.js';
 
 /**
  * Adapter Node (Vite dev server + Vercel) cho lõi sheetsCore.
@@ -32,7 +32,8 @@ export async function googleSheetsHandler(req: IncomingMessage & { body?: unknow
     req.method || 'GET',
     pathname,
     readJson,
-    resolveSheetsConfig(process.env as SheetsEnv),
+    // ID Google Sheet chọn ở module Cài đặt (header X-Spreadsheet-Id), không thì dùng ID mặc định
+    applySpreadsheetOverride(resolveSheetsConfig(process.env as SheetsEnv), String(req.headers['x-spreadsheet-id'] || '')),
   );
 
   res.statusCode = result.status;
