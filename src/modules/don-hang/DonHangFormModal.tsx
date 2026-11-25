@@ -1014,24 +1014,6 @@ export function DonHangFormModal({ isOpen, onClose, orderToEdit }: Props) {
                 />
               </div>
 
-              {/* Trạng thái đơn */}
-              <div>
-                <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
-                  Trạng thái đơn
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as Order['status'])}
-                  className="w-full h-8 px-2 rounded-lg border border-border bg-background text-xs font-medium text-foreground focus:ring-1 focus:ring-primary"
-                >
-                  <option value="nhap">Nháp (Chờ xác nhận)</option>
-                  <option value="da_xac_nhan">Đã xác nhận</option>
-                  <option value="dang_giao">Đang giao hàng</option>
-                  <option value="hoan_thanh">Hoàn thành</option>
-                  <option value="huy">Đã hủy</option>
-                </select>
-              </div>
-
               {/* Ngày đặt (Định dạng dd/mm/yyyy) */}
               <div>
                 <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">

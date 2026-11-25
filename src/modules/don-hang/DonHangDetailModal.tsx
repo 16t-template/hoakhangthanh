@@ -1,19 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  CheckCircle2,
-  Clock,
   Coins,
   ExternalLink,
   Lock,
   Package,
   Printer,
   ShoppingCart,
-  Truck,
   User,
-  XCircle,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
 import { useDebtStore, useOrderStore } from '@/stores/hoaKhangThanhStore';
@@ -31,7 +26,7 @@ interface Props {
 }
 
 export function DonHangDetailModal({ order, onClose, onEdit }: Props) {
-  const { orders, updateOrderStatus } = useOrderStore();
+  const { orders } = useOrderStore();
   const debtRecords = useDebtStore((s) => s.records);
   const currentUser = useAuthStore((s) => s.user);
   const getOrderItemRights = usePermissionStore((s) => s.getOrderItemRights);
@@ -61,11 +56,6 @@ export function DonHangDetailModal({ order, onClose, onEdit }: Props) {
 
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
 
-  const handleStatusChange = (newStatus: Order['status']) => {
-    updateOrderStatus(order.id, newStatus);
-    toast.success('Đã cập nhật trạng thái đơn hàng');
-  };
-
   const handlePrint = () => {
     setIsPrintModalOpen(true);
   };
@@ -86,48 +76,6 @@ export function DonHangDetailModal({ order, onClose, onEdit }: Props) {
     order.totalProfit ||
     order.items.reduce((sum, i) => sum + (i.profit || i.amount - (i.costPrice || 0) * i.quantity), 0);
 
-  const getStatusBadge = (status: Order['status']) => {
-    switch (status) {
-      case 'nhap':
-      case 'pending':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-muted text-muted-foreground border border-border">
-            Nháp (Chờ duyệt)
-          </span>
-        );
-      case 'da_xac_nhan':
-      case 'processing':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 border border-blue-200 dark:border-blue-800">
-            Đã xác nhận
-          </span>
-        );
-      case 'dang_giao':
-      case 'delivering':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 border border-amber-200 dark:border-amber-800">
-            Đang giao hàng
-          </span>
-        );
-      case 'hoan_thanh':
-      case 'completed':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-200 dark:border-emerald-800">
-            Hoàn thành
-          </span>
-        );
-      case 'huy':
-      case 'cancelled':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-600 border border-rose-200 dark:border-rose-800">
-            Đã hủy
-          </span>
-        );
-      default:
-        return null;
-    }
-  };
-
   return (
     <>
       <Drawer
@@ -138,42 +86,7 @@ export function DonHangDetailModal({ order, onClose, onEdit }: Props) {
       onClose={onClose}
       footer={
         <div className="flex flex-wrap items-center justify-between gap-2 w-full print:hidden">
-          <div className="flex items-center gap-1.5">
-            <Button
-              size="sm"
-              variant={order.status === 'da_xac_nhan' ? 'secondary' : 'outline'}
-              onClick={() => handleStatusChange('da_xac_nhan')}
-              className="gap-1 text-xs"
-            >
-              <Clock size={13} /> Xác nhận
-            </Button>
-            <Button
-              size="sm"
-              variant={order.status === 'dang_giao' ? 'secondary' : 'outline'}
-              onClick={() => handleStatusChange('dang_giao')}
-              className="gap-1 text-xs"
-            >
-              <Truck size={13} /> Đang giao
-            </Button>
-            <Button
-              size="sm"
-              variant={order.status === 'hoan_thanh' ? 'secondary' : 'outline'}
-              onClick={() => handleStatusChange('hoan_thanh')}
-              className="gap-1 text-xs text-emerald-600 border-emerald-300"
-            >
-              <CheckCircle2 size={13} /> Hoàn tất
-            </Button>
-            {order.status !== 'huy' && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => handleStatusChange('huy')}
-                className="gap-1 text-xs text-rose-600 border-rose-300"
-              >
-                <XCircle size={13} /> Hủy đơn
-              </Button>
-            )}
-          </div>
+          <div />
 
           <div className="flex items-center gap-2">
             <button
@@ -209,7 +122,6 @@ export function DonHangDetailModal({ order, onClose, onEdit }: Props) {
               <span className="font-mono text-sm font-bold text-primary px-2.5 py-0.5 rounded bg-primary/10">
                 {order.code}
               </span>
-              {getStatusBadge(order.status)}
             </div>
             <div className="text-xs text-muted-foreground">
               Ngày đặt: <strong className="text-foreground">{formatDate(order.orderDate)}</strong>

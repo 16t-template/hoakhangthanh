@@ -6,7 +6,6 @@ import {
   ArrowUpRight,
   Boxes,
   CheckCircle2,
-  Clock,
   Flower2,
   PackagePlus,
   Plus,
@@ -60,9 +59,6 @@ export default function DashboardPage() {
       .reduce((sum, o) => sum + o.totalAmount, 0);
   }, [orders]);
 
-  const pendingOrdersCount = useMemo(() => {
-    return orders.filter((o) => o.status === 'pending' || o.status === 'processing').length;
-  }, [orders]);
 
   const lowStockCount = useMemo(() => {
     return inventory.filter((i) => i.currentStock <= i.minStock).length;
@@ -102,18 +98,6 @@ export default function DashboardPage() {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num);
   };
 
-  const getOrderStatusBadge = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400"><CheckCircle2 size={12} /> Hoàn thành</span>;
-      case 'delivering':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-400"><Truck size={12} /> Đang giao</span>;
-      case 'processing':
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400"><Clock size={12} /> Đang xử lý</span>;
-      default:
-        return <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-400"><Clock size={12} /> Chờ duyệt</span>;
-    }
-  };
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
@@ -190,15 +174,15 @@ export default function DashboardPage() {
           className="rounded-2xl border border-border bg-card p-4.5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Đơn hàng cần xử lý</span>
+            <span className="text-xs font-medium text-muted-foreground">Tổng đơn hàng</span>
             <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform">
               <ShoppingCart size={20} />
             </div>
           </div>
           <div className="mt-3">
             <div className="text-2xl font-bold text-foreground tracking-tight flex items-baseline gap-2">
-              <span>{pendingOrdersCount}</span>
-              <span className="text-xs font-normal text-muted-foreground">/ {orders.length} tổng đơn</span>
+              <span>{orders.length}</span>
+              <span className="text-xs font-normal text-muted-foreground">đơn</span>
             </div>
             <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 dark:text-blue-400 font-medium">
               <span>Xem chi tiết danh sách đơn →</span>
@@ -443,7 +427,6 @@ export default function DashboardPage() {
 
                 <div className="text-right shrink-0 space-y-1">
                   <div className="text-xs font-bold text-foreground">{formatVND(order.totalAmount)}</div>
-                  <div>{getOrderStatusBadge(order.status)}</div>
                 </div>
               </div>
             ))}

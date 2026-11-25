@@ -10,7 +10,6 @@ import {
   Plus,
   Printer,
   SquarePen,
-  Tag,
   Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -50,7 +49,6 @@ const INITIAL_COLUMNS: ColumnDef[] = [
   { id: 'totalAmount', label: 'Tổng tiền', visible: true, minWidth: 120, width: 130, order: 6 },
   { id: 'debt', label: 'Công nợ cũ', visible: true, minWidth: 110, width: 120, order: 7 },
   { id: 'totalPayment', label: 'Thanh toán', visible: true, minWidth: 120, width: 130, order: 8 },
-  { id: 'status', label: 'Trạng thái', visible: true, minWidth: 110, width: 120, order: 9 },
   { id: 'creator', label: 'Người tạo đơn', visible: true, minWidth: 115, width: 125, order: 10 },
   { id: 'totalQuantity', label: 'Số lượng hoa', visible: true, minWidth: 100, width: 115, order: 11 },
   { id: 'actions', label: 'Thao tác', visible: true, minWidth: 80, width: 85, order: 12 },
@@ -76,7 +74,6 @@ export default function DonHangPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Filters
-  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedPartners, setSelectedPartners] = useState<string[]>([]);
   const [selectedDebtStatuses, setSelectedDebtStatuses] = useState<string[]>([]);
 
@@ -100,21 +97,6 @@ export default function DonHangPage() {
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
   const [printOrder, setPrintOrder] = useState<Order | null>(null);
 
-  // Filter options with counts
-  const statusOptions: FilterOption[] = useMemo(() => {
-    const counts: Record<string, number> = {};
-    orders.forEach((o) => {
-      const s = o.status;
-      counts[s] = (counts[s] || 0) + 1;
-    });
-    return [
-      { label: 'Nháp', value: 'nhap', count: counts['nhap'] || counts['pending'] || 0 },
-      { label: 'Đã xác nhận', value: 'da_xac_nhan', count: counts['da_xac_nhan'] || counts['processing'] || 0 },
-      { label: 'Đang giao', value: 'dang_giao', count: counts['dang_giao'] || counts['delivering'] || 0 },
-      { label: 'Hoàn thành', value: 'hoan_thanh', count: counts['hoan_thanh'] || counts['completed'] || 0 },
-      { label: 'Đã hủy', value: 'huy', count: counts['huy'] || counts['cancelled'] || 0 },
-    ];
-  }, [orders]);
 
   const partnerOptions: FilterOption[] = useMemo(() => {
     const map: Record<string, number> = {};
@@ -193,14 +175,6 @@ export default function DonHangPage() {
         (o.notes && o.notes.toLowerCase().includes(q)) ||
         o.items.some((i) => i.flowerName.toLowerCase().includes(q) || i.flowerCode.toLowerCase().includes(q));
 
-      const matchStatus =
-        selectedStatuses.length === 0 ||
-        selectedStatuses.includes(o.status) ||
-        (selectedStatuses.includes('nhap') && o.status === 'pending') ||
-        (selectedStatuses.includes('da_xac_nhan') && o.status === 'processing') ||
-        (selectedStatuses.includes('dang_giao') && o.status === 'delivering') ||
-        (selectedStatuses.includes('hoan_thanh') && o.status === 'completed');
-
       const matchPartner =
         selectedPartners.length === 0 || selectedPartners.includes(o.distributorName);
 
@@ -216,14 +190,14 @@ export default function DonHangPage() {
         (selectedDebtStatuses.includes('has_debt') && debt > 0) ||
         (selectedDebtStatuses.includes('paid') && debt <= 0);
 
-      return matchSearch && matchStatus && matchPartner && matchDebt;
+      return matchSearch && matchPartner && matchDebt;
     }).sort((a, b) => {
       const tA = parseDateTimestamp(a.orderDate) ?? 0;
       const tB = parseDateTimestamp(b.orderDate) ?? 0;
       if (tB !== tA) return tB - tA; // Lớn tới bé: ngày mới nhất hiển thị lên đầu
       return (b.code || '').localeCompare(a.code || '', undefined, { numeric: true });
     });
-  }, [orders, searchTerm, selectedStatuses, selectedPartners, selectedDebtStatuses, overdueCustomerMap]);
+  }, [orders, searchTerm, selectedPartners, selectedDebtStatuses, overdueCustomerMap]);
 
   // Paginated Data
   
@@ -295,44 +269,6 @@ export default function DonHangPage() {
     return (num || 0).toLocaleString('vi-VN');
   };
 
-  const renderStatusBadge = (status: Order['status']) => {
-    switch (status) {
-      case 'nhap':
-      case 'pending':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-muted text-muted-foreground border border-border/80">
-            Nháp
-          </span>
-        );
-      case 'da_xac_nhan':
-      case 'processing':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-            Đã xác nhận
-          </span>
-        );
-      case 'dang_giao':
-      case 'delivering':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
-            Đang giao
-          </span>
-        );
-      case 'hoan_thanh':
-      case 'completed':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-            Hoàn thành
-          </span>
-        );
-      default:
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-            Đã hủy
-          </span>
-        );
-    }
-  };
 
   const renderCell = (columnId: string, row: Order) => {
     const totalQty = row.totalQuantity || row.items.reduce((s, i) => s + i.quantity, 0);
@@ -430,8 +366,6 @@ export default function DonHangPage() {
           </span>
         );
       }
-      case 'status':
-        return renderStatusBadge(row.status);
       case 'creator':
         return (
           <span className="text-xs text-foreground font-medium">
@@ -536,7 +470,6 @@ export default function DonHangPage() {
                 Chưa trả nợ
               </span>
             )}
-            {renderStatusBadge(row.status)}
           </div>
         </div>
         <div>
@@ -594,12 +527,10 @@ export default function DonHangPage() {
   };
 
   const activeFilterCount =
-    (selectedStatuses.length > 0 ? 1 : 0) +
     (selectedPartners.length > 0 ? 1 : 0) +
     (selectedDebtStatuses.length > 0 ? 1 : 0);
 
   const handleClearAllFilters = () => {
-    setSelectedStatuses([]);
     setSelectedPartners([]);
     setSelectedDebtStatuses([]);
     setSearchTerm('');
@@ -691,13 +622,6 @@ export default function DonHangPage() {
             }
             filters={
               <>
-                <MultiSelectFilter
-                  icon={Tag}
-                  placeholder="Trạng thái đơn"
-                  options={statusOptions}
-                  value={selectedStatuses}
-                  onChange={setSelectedStatuses}
-                />
                 <MultiSelectFilter
                   icon={Building2}
                   placeholder="NPP / Khách hàng"

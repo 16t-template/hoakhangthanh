@@ -691,7 +691,11 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
         const sheetItems = itemsByOrderCode.get(code);
 
         // Nhận diện chính xác các cấu trúc sheet DON_HANG:
-        // Layout 0: Chuẩn 15 cột (bỏ "Đã thanh toán" & "Còn nợ đơn")
+        // Layout 13 cột (hiện tại, bỏ cả "Trạng thái đơn" & "Trạng thái thanh toán"):
+        //   r[0]=id, r[1]=Ngày, r[2]=NPP/Khách, r[3]=Thành tiền hoa, r[4]=Cước, r[5]=Trừ hàng, r[6]=Tổng tiền,
+        //   r[7]=Nợ cũ, r[8]=Thanh toán, r[9]=Người tạo, r[10]=SL hoa, r[11]=Ghi chú, r[12]=Cập nhật lúc
+        //
+        // Layout 0: Chuẩn 15 cột (bản trước) (bỏ "Đã thanh toán" & "Còn nợ đơn")
         //   r[0]=id, r[1]=Ngày, r[2]=NPP/Khách, r[3]=Thành tiền hoa, r[4]=Cước, r[5]=Trừ hàng, r[6]=Tổng tiền,
         //   r[7]=Nợ cũ, r[8]=Thanh toán, r[9]=Trạng thái, r[10]=Trạng thái thanh toán, r[11]=Người tạo,
         //   r[12]=SL hoa, r[13]=Ghi chú, r[14]=Cập nhật lúc
@@ -714,8 +718,16 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           (PAYMENT_STATUSES.includes(String(r[10] || '').trim().toLowerCase()) ||
             ORDER_STATUSES.includes(String(r[9] || '').trim().toLowerCase()));
 
+        // 13 cột: cột cuối (r[12]) là thời điểm cập nhật "dd/mm/yyyy hh:mm:ss"
+        const isStandard13Cols =
+          !isStandard15Cols &&
+          r.length >= 13 &&
+          r.length <= 13 &&
+          /^\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}/.test(String(r[12] || '').trim());
+
         const isStandard17Cols =
           !isStandard15Cols &&
+          !isStandard13Cols &&
           r.length >= 14 && (
             ['unpaid', 'partial', 'paid'].includes(String(r[12] || '').trim().toLowerCase()) ||
             ['nhap', 'cho_xac_nhan', 'da_xac_nhan', 'dang_giao', 'hoan_thanh', 'huy'].includes(String(r[11] || '').trim().toLowerCase()) ||
@@ -724,6 +736,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
 
         const hasPhoneAddress =
           !isStandard15Cols &&
+          !isStandard13Cols &&
           !isStandard17Cols &&
           r.length >= 18 &&
           (!isNumericString(r[3]) || !isNumericString(r[4])) &&
@@ -743,7 +756,20 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
         let creator = '';
         let notes = '';
 
-        if (isStandard15Cols) {
+        if (isStandard13Cols) {
+          itemsSubtotal = parseSheetNumber(r[3]) || prev?.itemsSubtotal || 0;
+          shippingFee = parseSheetNumber(r[4]) || prev?.shippingFee || 0;
+          discount = parseSheetNumber(r[5]) || prev?.discount || 0;
+          totalAmount = parseSheetNumber(r[6]) || prev?.totalAmount || 0;
+          oldDebt = parseSheetNumber(r[7]) || prev?.oldDebt || 0;
+          totalPayment = parseSheetNumber(r[8]) || prev?.totalPayment || 0;
+          // Không còn trạng thái trên sheet / web: giữ giá trị ẩn cũ (mặc định là đơn hợp lệ)
+          status = (prev?.status || 'da_xac_nhan') as Order['status'];
+          paymentStatus = (prev?.paymentStatus || 'unpaid') as Order['paymentStatus'];
+          creator = String(r[9] || '').trim() || prev?.creator || '';
+          totalQuantity = parseSheetNumber(r[10]) || prev?.totalQuantity || 0;
+          notes = String(r[11] || '').trim() || prev?.notes || '';
+        } else if (isStandard15Cols) {
           itemsSubtotal = parseSheetNumber(r[3]) || prev?.itemsSubtotal || 0;
           shippingFee = parseSheetNumber(r[4]) || prev?.shippingFee || 0;
           discount = parseSheetNumber(r[5]) || prev?.discount || 0;

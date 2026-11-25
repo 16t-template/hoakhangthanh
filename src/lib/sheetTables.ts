@@ -46,8 +46,6 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
         totalAmt,
         debt,
         totalPay,
-        o.status || '',
-        o.paymentStatus || '',
         o.creator || '',
         totalQty,
         o.notes || '',
@@ -55,12 +53,12 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
       ];
     });
 
-    // 15 cột A–O: id, Ngày, NPP, Thành tiền hoa, Cước xe, Trừ hàng, Tổng tiền, Công nợ cũ, Thanh toán,
-    // Trạng thái đơn, Trạng thái thanh toán, Người tạo, Số lượng hoa, Ghi chú, Cập nhật lúc
-    // (đã bỏ "Đã thanh toán" và "Còn nợ đơn" — Còn nợ đơn web tự tính)
+    // 13 cột A–M: id, Ngày, NPP, Thành tiền hoa, Cước xe, Trừ hàng, Tổng tiền, Công nợ cũ, Thanh toán,
+    // Người tạo, Số lượng hoa, Ghi chú, Cập nhật lúc
+    // (đã bỏ "Đã thanh toán", "Còn nợ đơn", "Trạng thái đơn", "Trạng thái thanh toán")
     batchData.push({
-      range: 'DON_HANG!A2:O' + Math.max(2, rows.length + 1),
-      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '', '', '', '']],
+      range: 'DON_HANG!A2:M' + Math.max(2, rows.length + 1),
+      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '', '']],
     });
 
     // 2. CHI_TIET_DON_HANG (Thứ tự mới: Mã ĐH, Ngày, Khách hàng, Mã hoa, Giá bán, SL, TT bán, Giá vốn, TT vốn, Lợi nhuận, Tên hoa, ĐVT)

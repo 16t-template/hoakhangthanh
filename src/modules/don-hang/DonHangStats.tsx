@@ -1,13 +1,11 @@
 import { useMemo, useState } from 'react';
 import {
   Calendar,
-  CheckCircle2,
   Coins,
   Download,
   Flower2,
   Layers,
   ListFilter,
-  PackageCheck,
   Printer,
   Search,
   ShoppingCart,
@@ -25,7 +23,6 @@ import {
 import { Button } from '@/components/ui/Button';
 import { useOrderStore, useFlowerStore } from '@/stores/hoaKhangThanhStore';
 import { formatDate, todayISODate } from '@/lib/format';
-import type { Order } from '@/types/hoaKhangThanh';
 
 type DatePreset = 'all' | 'today' | 'yesterday' | '7days' | 'month' | 'custom';
 type ViewMode = 'aggregated' | 'detailed' | 'profit';
@@ -58,7 +55,6 @@ interface DetailedPurchaseRow {
   unitPrice: number;
   amount: number;
   profit: number;
-  orderStatus: Order['status'];
 }
 
 interface AggregatedProfitFlowerRow {
@@ -87,7 +83,6 @@ interface OrderProfitRow {
   totalCost: number;
   totalProfit: number;
   profitMargin: number;
-  orderStatus: Order['status'];
 }
 
 export function DonHangStats() {
@@ -127,9 +122,6 @@ export function DonHangStats() {
   // Top metric overview (Bao gồm Doanh số, Giá vốn, Lợi nhuận gộp & Tỷ suất lợi nhuận)
   const metrics = useMemo(() => {
     const total = orders.length;
-    const confirmed = orders.filter((o) => o.status === 'da_xac_nhan' || o.status === 'processing').length;
-    const delivering = orders.filter((o) => o.status === 'dang_giao' || o.status === 'delivering').length;
-    const completed = orders.filter((o) => o.status === 'hoan_thanh' || o.status === 'completed').length;
     const totalVal = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
     let totalCost = 0;
@@ -153,7 +145,7 @@ export function DonHangStats() {
 
     const profitMargin = totalVal > 0 ? Math.round((totalProfit / totalVal) * 1000) / 10 : 0;
 
-    return { total, confirmed, delivering, completed, totalVal, totalCost, totalProfit, profitMargin };
+    return { total, totalVal, totalCost, totalProfit, profitMargin };
   }, [orders, flowerMap]);
 
   // Chart: revenue by partner
@@ -169,22 +161,6 @@ export function DonHangStats() {
     }));
   }, [orders]);
 
-  // Chart: order status
-  const byStatus = useMemo(() => {
-    const map: Record<string, number> = {
-      'Nháp': 0,
-      'Đã xác nhận': 0,
-      'Đang giao': 0,
-      'Hoàn thành': 0,
-    };
-    orders.forEach((o) => {
-      if (o.status === 'nhap' || o.status === 'pending') map['Nháp']++;
-      else if (o.status === 'da_xac_nhan' || o.status === 'processing') map['Đã xác nhận']++;
-      else if (o.status === 'dang_giao' || o.status === 'delivering') map['Đang giao']++;
-      else if (o.status === 'hoan_thanh' || o.status === 'completed') map['Hoàn thành']++;
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [orders]);
 
   // Quick date preset handlers
   const handlePresetChange = (preset: DatePreset) => {
@@ -314,7 +290,6 @@ export function DonHangStats() {
             unitPrice: item.unitPrice,
             amount: item.amount,
             profit,
-            orderStatus: o.status,
           });
         }
       });
@@ -510,7 +485,6 @@ export function DonHangStats() {
           totalCost: oCost,
           totalProfit: oProfit,
           profitMargin,
-          orderStatus: o.status,
         };
       })
       .sort((a, b) => (b.orderDate || '').localeCompare(a.orderDate || ''));
@@ -613,7 +587,6 @@ export function DonHangStats() {
           'Doanh số bán': r.totalRevenue,
           'Lợi nhuận đơn': r.totalProfit,
           'Tỷ suất LN (%)': `${r.profitMargin}%`,
-          'Trạng thái đơn': r.orderStatus,
         }));
 
         const ws = XLSX.utils.json_to_sheet(exportData);
@@ -655,7 +628,6 @@ export function DonHangStats() {
         'Số lượng mua': r.quantity,
         'Đơn giá': r.unitPrice,
         'Thành tiền': r.amount,
-        'Trạng thái đơn': r.orderStatus,
       }));
 
       const ws = XLSX.utils.json_to_sheet(exportData);
@@ -905,44 +877,6 @@ export function DonHangStats() {
     }, 400);
   };
 
-  const renderStatusBadge = (status: Order['status']) => {
-    switch (status) {
-      case 'nhap':
-      case 'pending':
-        return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-muted text-muted-foreground border border-border">
-            Nháp
-          </span>
-        );
-      case 'da_xac_nhan':
-      case 'processing':
-        return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-            Đã xác nhận
-          </span>
-        );
-      case 'dang_giao':
-      case 'delivering':
-        return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-200 dark:border-sky-800">
-            Đang giao
-          </span>
-        );
-      case 'hoan_thanh':
-      case 'completed':
-        return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-            Hoàn thành
-          </span>
-        );
-      default:
-        return (
-          <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200">
-            Đã hủy
-          </span>
-        );
-    }
-  };
 
   return (
     <div className="p-4 sm:p-5 space-y-6 overflow-y-auto max-w-7xl mx-auto">
@@ -953,12 +887,6 @@ export function DonHangStats() {
           value={metrics.total}
           icon={ShoppingCart}
           primary
-        />
-        <StatCard
-          label="Đã hoàn thành"
-          value={metrics.completed}
-          icon={CheckCircle2}
-          colorClass="bg-sky-500/10 text-sky-600 border-sky-200"
         />
         <StatCard
           label="Tổng doanh số bán"
@@ -1003,12 +931,6 @@ export function DonHangStats() {
             <BarChartBox data={topProfitFlowers} seriesName="Triệu LN" />
           </ChartCard>
 
-          <ChartCard
-            title="Tình trạng đơn đặt hàng"
-            icon={<PackageCheck size={15} className="text-primary" />}
-          >
-            <BarChartBox data={byStatus} seriesName="Số lượng" layout="vertical" />
-          </ChartCard>
         </div>
       )}
 
@@ -1451,7 +1373,6 @@ export function DonHangStats() {
                         <th className="py-2.5 px-3 min-w-[125px] text-right">Doanh số đơn hàng</th>
                         <th className="py-2.5 px-3 min-w-[130px] text-right text-emerald-700 dark:text-emerald-300">Lợi nhuận đơn</th>
                         <th className="py-2.5 px-3 min-w-[95px] text-right">Tỷ suất (%)</th>
-                        <th className="py-2.5 px-3 min-w-[95px] text-center">Trạng thái</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/60">
@@ -1488,7 +1409,6 @@ export function DonHangStats() {
                                   {row.profitMargin}%
                                 </span>
                               </td>
-                              <td className="py-2.5 px-3 text-center">{renderStatusBadge(row.orderStatus)}</td>
                             </tr>
                           );
                         })
@@ -1623,7 +1543,6 @@ export function DonHangStats() {
                       <th className="py-2.5 px-3 min-w-[95px] text-right">SL mua</th>
                       <th className="py-2.5 px-3 min-w-[105px] text-right">Đơn giá</th>
                       <th className="py-2.5 px-3 min-w-[115px] text-right">Thành tiền</th>
-                      <th className="py-2.5 px-3 min-w-[95px] text-center">Trạng thái</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
@@ -1660,7 +1579,6 @@ export function DonHangStats() {
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-primary">
                               {formatNumber(row.amount)}
                             </td>
-                            <td className="py-2.5 px-3 text-center">{renderStatusBadge(row.orderStatus)}</td>
                           </tr>
                         );
                       })
