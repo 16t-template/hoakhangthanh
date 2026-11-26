@@ -603,8 +603,8 @@ export default function DashboardPage() {
             {inventory
               .filter((i) => i.currentStock <= i.minStock && i.minStock > 0)
               .slice(0, 6)
-              .map((item) => (
-                <div key={`${item.flowerId}-${item.warehouse}`} className="p-2.5 rounded-xl border border-amber-300/60 bg-amber-500/5 flex items-center justify-between gap-3">
+              .map((item, idx) => (
+                <div key={`${item.flowerId}-${idx}`} className="p-2.5 rounded-xl border border-amber-300/60 bg-amber-500/5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <AlertTriangle size={16} className="text-amber-600 shrink-0" />
                     <div className="min-w-0">

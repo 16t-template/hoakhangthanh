@@ -879,24 +879,24 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           totalQuantity = parseSheetNumber(r[10]) || 0;
           notes = String(r[11] || '').trim();
         } else if (isStandard15Cols) {
-          itemsSubtotal = parseSheetNumber(r[3]) || prev?.itemsSubtotal || 0;
-          shippingFee = parseSheetNumber(r[4]) || prev?.shippingFee || 0;
-          discount = parseSheetNumber(r[5]) || prev?.discount || 0;
-          totalAmount = parseSheetNumber(r[6]) || prev?.totalAmount || 0;
-          oldDebt = parseSheetNumber(r[7]) || prev?.oldDebt || 0;
-          totalPayment = parseSheetNumber(r[8]) || prev?.totalPayment || 0;
+          itemsSubtotal = parseSheetNumber(r[3]) || 0;
+          shippingFee = parseSheetNumber(r[4]) || 0;
+          discount = parseSheetNumber(r[5]) || 0;
+          totalAmount = parseSheetNumber(r[6]) || 0;
+          oldDebt = parseSheetNumber(r[7]) || 0;
+          totalPayment = parseSheetNumber(r[8]) || 0;
           status = (String(r[9] || prev?.status || 'da_xac_nhan').trim()) as Order['status'];
           paymentStatus = (String(r[10] || prev?.paymentStatus || 'unpaid').trim()) as Order['paymentStatus'];
           creator = String(r[11] || '').trim() || prev?.creator || '';
           totalQuantity = parseSheetNumber(r[12]) || prev?.totalQuantity || 0;
           notes = String(r[13] || '').trim() || prev?.notes || '';
         } else if (isStandard17Cols) {
-          itemsSubtotal = parseSheetNumber(r[3]) || prev?.itemsSubtotal || 0;
-          shippingFee = parseSheetNumber(r[4]) || prev?.shippingFee || 0;
-          discount = parseSheetNumber(r[5]) || prev?.discount || 0;
-          totalAmount = parseSheetNumber(r[6]) || prev?.totalAmount || 0;
-          oldDebt = parseSheetNumber(r[7]) || prev?.oldDebt || 0;
-          totalPayment = parseSheetNumber(r[8]) || prev?.totalPayment || 0;
+          itemsSubtotal = parseSheetNumber(r[3]) || 0;
+          shippingFee = parseSheetNumber(r[4]) || 0;
+          discount = parseSheetNumber(r[5]) || 0;
+          totalAmount = parseSheetNumber(r[6]) || 0;
+          oldDebt = parseSheetNumber(r[7]) || 0;
+          totalPayment = parseSheetNumber(r[8]) || 0;
           paidAmount = parseSheetNumber(r[9]) || prev?.paidAmount || 0;
           debtAmount = parseSheetNumber(r[10]) || prev?.debtAmount || 0;
           status = (String(r[11] || prev?.status || 'da_xac_nhan').trim()) as Order['status'];
@@ -906,12 +906,12 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           notes = String(r[15] || '').trim() || prev?.notes || '';
         } else if (hasPhoneAddress) {
           totalQuantity = parseSheetNumber(r[5]) || prev?.totalQuantity || 0;
-          itemsSubtotal = parseSheetNumber(r[6]) || prev?.itemsSubtotal || 0;
-          shippingFee = parseSheetNumber(r[7]) || prev?.shippingFee || 0;
-          discount = parseSheetNumber(r[8]) || prev?.discount || 0;
-          totalAmount = parseSheetNumber(r[9]) || prev?.totalAmount || 0;
-          oldDebt = parseSheetNumber(r[10]) || prev?.oldDebt || 0;
-          totalPayment = parseSheetNumber(r[11]) || prev?.totalPayment || 0;
+          itemsSubtotal = parseSheetNumber(r[6]) || 0;
+          shippingFee = parseSheetNumber(r[7]) || 0;
+          discount = parseSheetNumber(r[8]) || 0;
+          totalAmount = parseSheetNumber(r[9]) || 0;
+          oldDebt = parseSheetNumber(r[10]) || 0;
+          totalPayment = parseSheetNumber(r[11]) || 0;
           paidAmount = parseSheetNumber(r[12]) || prev?.paidAmount || 0;
           debtAmount = parseSheetNumber(r[13]) || prev?.debtAmount || 0;
           status = (String(r[14] || prev?.status || 'da_xac_nhan').trim()) as Order['status'];
@@ -920,10 +920,11 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           notes = String(r[17] || '').trim() || prev?.notes || '';
         } else {
           // Layout ngắn (7 cột): id, ngay, khach, thanh_tien, cuoc_xe, tru_hang, tong_tien
-          itemsSubtotal = parseSheetNumber(r[3]) || prev?.itemsSubtotal || 0;
-          shippingFee = parseSheetNumber(r[4]) || prev?.shippingFee || 0;
-          discount = parseSheetNumber(r[5]) || prev?.discount || 0;
-          totalAmount = parseSheetNumber(r[6]) || prev?.totalAmount || (itemsSubtotal + shippingFee - discount);
+          // Lấy đúng số trên sheet (ô trống = 0), không lấy lại số cũ trong trình duyệt
+          itemsSubtotal = parseSheetNumber(r[3]) || 0;
+          shippingFee = parseSheetNumber(r[4]) || 0;
+          discount = parseSheetNumber(r[5]) || 0;
+          totalAmount = parseSheetNumber(r[6]) || (itemsSubtotal + shippingFee - discount);
           status = prev?.status || 'da_xac_nhan';
           paymentStatus = prev?.paymentStatus || 'unpaid';
           creator = prev?.creator || '';
@@ -984,12 +985,12 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           orderDate: fromSheetDate(r[1]),
           supplierName: String(r[2] || '').trim(),
           totalQuantity: parseSheetNumber(r[3]) || prev?.totalQuantity || 0,
-          itemsSubtotal: parseSheetNumber(r[4]) || prev?.itemsSubtotal || 0,
-          shippingFee: parseSheetNumber(r[5]) || prev?.shippingFee || 0,
+          itemsSubtotal: parseSheetNumber(r[4]) || 0,
+          shippingFee: parseSheetNumber(r[5]) || 0,
           discount: 0,
-          totalAmount: parseSheetNumber(r[6]) || prev?.totalAmount || 0,
-          paidAmount: parseSheetNumber(r[7]) || prev?.paidAmount || 0,
-          debtAmount: parseSheetNumber(r[8]) || prev?.debtAmount || 0,
+          totalAmount: parseSheetNumber(r[6]) || 0,
+          paidAmount: parseSheetNumber(r[7]) || 0,
+          debtAmount: parseSheetNumber(r[8]) || 0,
           status: (String(r[9] || prev?.status || 'nhap').trim()) as SupplierOrder['status'],
           paymentStatus: 'unpaid' as SupplierOrder['paymentStatus'],
           creator: String(r[10] || '').trim() || prev?.creator || '',
