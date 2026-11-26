@@ -4,6 +4,7 @@ import {
   checkGoogleSheetsConnection,
   pullFromGoogleSheets,
   syncAllToGoogleSheets,
+  takeModulesToSeedAfterPull,
   type GoogleSheetsStatus,
   type SyncableModule,
 } from '@/lib/googleSheetsService';
@@ -18,6 +19,7 @@ import {
   useOrderStore,
   useSupplierStore,
 } from '@/stores/hoaKhangThanhStore';
+import { useDailyStockReconcileStore } from '@/stores/dailyStockReconcileStore';
 import { toast } from 'sonner';
 
 export interface SyncLogEntry {
@@ -304,6 +306,8 @@ export function initGoogleSheetsAutoSync() {
     if (ok) {
       initialPullDone = true;
       retryCount = 0;
+      const seed = takeModulesToSeedAfterPull();
+      if (seed.length > 0) void useGoogleSheetsStore.getState().syncToSheets(true, seed);
     } else {
       const delay = Math.min(30000 * 2 ** retryCount, 15 * 60 * 1000);
       retryCount += 1;
@@ -344,6 +348,8 @@ export async function reloadFromNewSpreadsheet(): Promise<boolean> {
   }
   // Tải lỗi thì vẫn chặn ghi lên cho tới khi tải lại thành công (mở lại web hoặc bấm Tải về)
   initialPullDone = ok;
+  // Sheet mới: không tự đẩy dữ liệu Tồn ngày của sheet cũ sang
+  takeModulesToSeedAfterPull();
   if (ok) void useGoogleSheetsStore.getState().checkStatus();
   return ok;
 }
@@ -358,6 +364,7 @@ function _startSubscriptions(handleStoreChange: (mod?: SyncableModule) => void) 
   useInventoryStore.subscribe(() => handleStoreChange('inventory'));
   useEmployeeStore.subscribe(() => handleStoreChange('employees'));
   useSupplierOrderStore.subscribe(() => handleStoreChange('supplierOrders'));
+  useDailyStockReconcileStore.subscribe(() => handleStoreChange('dailyStock'));
   // Lịch sử thao tác chỉ lưu trên web → thay đổi lịch sử không cần đẩy lên Google Sheets
   // Lịch sử thao tác chỉ lưu trên web → thay đổi lịch sử không cần đẩy lên Google Sheets
 }

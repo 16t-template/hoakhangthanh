@@ -36,6 +36,7 @@ const REQUIRED_TABS = [
   'CONG_NO_NCC',
   'THU_CHI',
   'TON_KHO',
+  'TON_NGAY',
   'NHAN_VIEN',
 ];
 

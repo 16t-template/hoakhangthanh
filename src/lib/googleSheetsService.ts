@@ -2,6 +2,7 @@ import { pauseModuleAudit } from '@/stores/moduleAuditStore';
 import { GOOGLE_SHEETS_CONFIG } from '@/config/googleSheetsConfig';
 import { getActiveSpreadsheetId, sheetsRequestHeaders, spreadsheetUrlOf } from '@/stores/appSettingsStore';
 import { fromSheetDate } from '@/lib/sheetDate';
+import { useDailyStockReconcileStore, type DailyStockRecord } from '@/stores/dailyStockReconcileStore';
 import {
   useCashStore,
   useDebtStore,
@@ -140,7 +141,19 @@ export type SyncableModule =
   | 'debtRecords'
   | 'transactions'
   | 'inventory'
-  | 'employees';
+  | 'employees'
+  | 'dailyStock';
+
+/**
+ * Module cần đẩy lên ngay sau lần tải về (sheet còn trống nhưng web đang có dữ liệu).
+ * Dùng cho lần đầu đưa Tồn ngày từ trình duyệt lên sheet TON_NGAY.
+ */
+let modulesToSeedAfterPull: SyncableModule[] = [];
+export function takeModulesToSeedAfterPull(): SyncableModule[] {
+  const mods = modulesToSeedAfterPull;
+  modulesToSeedAfterPull = [];
+  return mods;
+}
 
 /**
  * Đẩy dữ liệu từ store trên Web lên Google Sheets (hỗ trợ đồng bộ mục tiêu từng module hoặc toàn bộ 11 sheets)
@@ -183,6 +196,9 @@ export async function syncAllToGoogleSheets(modules?: SyncableModule[]): Promise
     }
     if (shouldSync('employees')) {
       payload.employees = useEmployeeStore.getState().employees;
+    }
+    if (shouldSync('dailyStock')) {
+      payload.dailyStock = useDailyStockReconcileStore.getState().records;
     }
 
     const res = await fetch('/api/google-sheets/sync-all', {
@@ -431,6 +447,48 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
       });
       useInventoryStore.setState({ inventory });
       counts['ton_kho'] = inventory.length;
+    }
+
+    // --- 5b. TON_NGAY ---
+    // Cột: id, Ngày (dd/mm/yyyy), Mã hoa, Tên hoa, Tồn cuối, Thực nhập NCC, Tồn đầu sửa tay, Ghi chú
+    const tonNgayRows = (sheetMap['TON_NGAY'] || []).filter((r) => {
+      const c0 = String(r[0] || '').trim().toLowerCase();
+      return c0 !== 'id' && (r[1] || r[2]);
+    });
+    if (tonNgayRows.length > 0) {
+      const flowerByCode = new Map(
+        useFlowerStore.getState().flowers.map((f) => [String(f.code || '').trim().toLowerCase(), f] as const),
+      );
+      const records: Record<string, DailyStockRecord[]> = {};
+      const seen = new Set<string>();
+      for (const r of tonNgayRows) {
+        const ymd = fromSheetDate(r[1]);
+        const code = String(r[2] || '').trim();
+        if (!ymd || !code) continue;
+        const key = `${ymd}|${code.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const fl = flowerByCode.get(code.toLowerCase());
+        const rec: DailyStockRecord = {
+          flowerId: fl?.id || code,
+          flowerCode: code,
+          flowerName: String(r[3] || '').trim() || fl?.name || code,
+          closingStock: parseSheetNumber(r[4]) || 0,
+        };
+        const optNum = (v: unknown) => (v === undefined || v === null || String(v).trim() === '' ? undefined : parseSheetNumber(v) || 0);
+        const actual = optNum(r[5]);
+        if (actual !== undefined) rec.actualImportNCC = actual;
+        const opening = optNum(r[6]);
+        if (opening !== undefined) rec.openingStockCustom = opening;
+        const notes = String(r[7] || '').trim();
+        if (notes) rec.notes = notes;
+        (records[ymd] ||= []).push(rec);
+      }
+      useDailyStockReconcileStore.setState({ records });
+      counts['ton_ngay'] = tonNgayRows.length;
+    } else if (Object.keys(useDailyStockReconcileStore.getState().records).length > 0) {
+      // Sheet TON_NGAY trống / chưa có nhưng web đang có dữ liệu → giữ lại và đẩy lên sau khi tải xong
+      modulesToSeedAfterPull.push('dailyStock');
     }
 
     // --- 6. THU_CHI ---
@@ -939,6 +997,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
       counts['ncc'] ? `${counts['ncc']} NCC` : '',
       counts['nhan_vien'] ? `${counts['nhan_vien']} nhân viên` : '',
       counts['ton_kho'] ? `${counts['ton_kho']} mặt hàng tồn kho` : '',
+      counts['ton_ngay'] ? `${counts['ton_ngay']} dòng tồn ngày` : '',
       counts['thu_chi'] ? `${counts['thu_chi']} thu chi` : '',
       counts['cong_no_npp'] ? `${counts['cong_no_npp']} công nợ NPP` : '',
       counts['cong_no_ncc'] ? `${counts['cong_no_ncc']} công nợ NCC` : '',

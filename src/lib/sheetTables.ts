@@ -12,6 +12,8 @@ export interface SheetSyncBody {
   inventory?: any[];
   employees?: any[];
   auditLogs?: any[];
+  /** Tồn ngày: { 'YYYY-MM-DD': DailyStockRecord[] } */
+  dailyStock?: Record<string, any[]>;
 }
 
 export interface SheetTable {
@@ -314,6 +316,32 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
     batchData.push({
       range: 'LICH_SU_THAO_TAC!A2:J' + Math.max(2, rows.length + 1),
       values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '']],
+    });
+  }
+
+  // 12. TON_NGAY (8 cột A–H: id, Ngày, Mã hoa, Tên hoa, Tồn cuối, Thực nhập NCC, Tồn đầu sửa tay, Ghi chú)
+  if (body.dailyStock) {
+    const rows: any[][] = [];
+    Object.keys(body.dailyStock)
+      .sort()
+      .forEach((ymd) => {
+        (body.dailyStock![ymd] || []).forEach((r: any) => {
+          const code = r.flowerCode || '';
+          rows.push([
+            `TN-${ymd.replace(/-/g, '')}-${code || r.flowerId || ''}`,
+            toSheetDate(ymd),
+            code,
+            r.flowerName || '',
+            r.closingStock || 0,
+            r.actualImportNCC ?? '',
+            r.openingStockCustom ?? '',
+            r.notes || '',
+          ]);
+        });
+      });
+    batchData.push({
+      range: 'TON_NGAY!A2:H' + Math.max(2, rows.length + 1),
+      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '']],
     });
   }
 

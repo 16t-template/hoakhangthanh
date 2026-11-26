@@ -131,6 +131,7 @@ const PULL_RANGES = [
   'CONG_NO_NPP!A2:J',
   'CONG_NO_NCC!A2:J',
   'CONG_NO!A2:J',
+  'TON_NGAY!A2:H',
 ];
 
 export interface ApiResult {

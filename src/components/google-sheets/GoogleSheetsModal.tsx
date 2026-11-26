@@ -32,6 +32,7 @@ const MODULE_SHEETS = [
   { name: 'CONG_NO_NCC', label: 'Công nợ Nhà cung cấp (NCC)', cols: 10, color: 'bg-emerald-600', desc: 'Mã công nợ (ID), ngày ghi, NCC/Nhà vườn, loại giao dịch, phát sinh, lũy kế nợ...' },
   { name: 'THU_CHI', label: 'Sổ quỹ thu chi', cols: 9, color: 'bg-teal-600', desc: 'Mã phiếu, loại thu/chi, số tiền, người nộp/nhận, phương thức...' },
   { name: 'TON_KHO', label: 'Báo cáo tồn kho', cols: 9, color: 'bg-slate-500', desc: 'Mã hoa, tồn đầu kỳ, nhập, xuất, tồn cuối kỳ, cảnh báo tồn, vị trí kho...' },
+  { name: 'TON_NGAY', label: 'Tồn ngày', cols: 8, color: 'bg-lime-600', desc: 'id, ngày, mã hoa, tên hoa, tồn cuối, thực nhập NCC, tồn đầu sửa tay, ghi chú' },
   { name: 'NHAN_VIEN', label: 'Danh sách nhân sự', cols: 11, color: 'bg-indigo-500', desc: 'Mã NV, họ tên, chức vụ, phòng ban, quyền hạn, SĐT, ngày vào làm, lương...' },
   { name: 'LICH_SU_THAO_TAC', label: 'Nhật ký thao tác', cols: 10, color: 'bg-zinc-500', desc: 'Thời gian, nhân viên thực hiện, thao tác, mã đơn, tóm tắt, chi tiết thay đổi...' },
 ];

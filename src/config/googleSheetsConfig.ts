@@ -45,6 +45,7 @@ export const GOOGLE_SHEETS_CONFIG = {
     CONG_NO_NCC: 'CONG_NO_NCC',
     THU_CHI: 'THU_CHI',
     TON_KHO: 'TON_KHO',
+    TON_NGAY: 'TON_NGAY',
     NHAN_VIEN: 'NHAN_VIEN',
     LICH_SU_THAO_TAC: 'LICH_SU_THAO_TAC',
   },
