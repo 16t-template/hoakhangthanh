@@ -1,34 +1,36 @@
 import dayjs from 'dayjs';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
-  ArrowUpRight,
   Boxes,
+  CalendarDays,
   CheckCircle2,
+  Coins,
   Flower2,
+  MinusCircle,
   PackagePlus,
   Plus,
-  ShoppingCart,
+  Search,
   Store,
   TrendingUp,
   Truck,
   Users,
   Wallet,
+  X,
 } from 'lucide-react';
 import {
-  Area,
-  AreaChart,
+  Bar,
+  BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import { Button } from '@/components/ui/Button';
+import { PartnerAutocomplete, removeVietnameseTones } from '@/components/ui/PartnerAutocomplete';
 import {
   useCashStore,
   useEmployeeStore,
@@ -36,465 +38,590 @@ import {
   useFlowerStore,
   useInventoryStore,
   useOrderStore,
+  useSupplierOrderStore,
   useSupplierStore,
 } from '@/stores/hoaKhangThanhStore';
 import { formatDate } from '@/lib/format';
+import type { Order, SupplierOrder } from '@/types/hoaKhangThanh';
 
-const PIE_COLORS = ['#f43f5e', '#f59e0b', '#8b5cf6', '#10b981', '#06b6d4', '#ec4899'];
+type Preset = 'today' | '7d' | 'month' | 'lastMonth' | 'year' | 'all' | 'custom';
+type GroupBy = 'day' | 'month';
+
+const CANCELLED = new Set(['cancelled', 'huy']);
+
+const fmt = (n: number) => Math.round(n || 0).toLocaleString('vi-VN');
+const fmtVND = (n: number) => `${fmt(n)} đ`;
+
+/** Ngày đơn về dạng YYYY-MM-DD (chấp nhận cả dd/mm/yyyy) */
+function ymd(d?: string): string {
+  if (!d) return '';
+  const s = d.trim();
+  const m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  return s.slice(0, 10);
+}
+
+function presetRange(p: Preset): { from: string; to: string } {
+  const t = dayjs();
+  switch (p) {
+    case 'today':
+      return { from: t.format('YYYY-MM-DD'), to: t.format('YYYY-MM-DD') };
+    case '7d':
+      return { from: t.subtract(6, 'day').format('YYYY-MM-DD'), to: t.format('YYYY-MM-DD') };
+    case 'month':
+      return { from: t.startOf('month').format('YYYY-MM-DD'), to: t.format('YYYY-MM-DD') };
+    case 'lastMonth': {
+      const l = t.subtract(1, 'month');
+      return { from: l.startOf('month').format('YYYY-MM-DD'), to: l.endOf('month').format('YYYY-MM-DD') };
+    }
+    case 'year':
+      return { from: t.startOf('year').format('YYYY-MM-DD'), to: t.format('YYYY-MM-DD') };
+    default:
+      return { from: '', to: '' };
+  }
+}
+
+/** Số liệu tiền của 1 đơn bán */
+function saleFigures(o: Order) {
+  const items = o.items || [];
+  const itemsSale = items.reduce((s, i) => s + (i.amount ?? (i.quantity || 0) * (i.unitPrice || 0)), 0);
+  const sale = itemsSale > 0 ? itemsSale : o.itemsSubtotal || 0;
+  const cost = items.reduce((s, i) => s + (i.importTotal ?? (i.quantity || 0) * (i.costPrice || 0)), 0);
+  const shipping = o.shippingFee || 0;
+  const discount = o.discount || 0;
+  return { sale, cost, shipping, discount, profit: sale - cost - discount };
+}
+
+const PRESETS: { key: Preset; label: string }[] = [
+  { key: 'today', label: 'Hôm nay' },
+  { key: '7d', label: '7 ngày' },
+  { key: 'month', label: 'Tháng này' },
+  { key: 'lastMonth', label: 'Tháng trước' },
+  { key: 'year', label: 'Năm nay' },
+  { key: 'all', label: 'Tất cả' },
+];
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { orders } = useOrderStore();
-  const employees = useEmployeeStore((state) => state.employees);
-  const { flowers } = useFlowerStore();
-  const { distributors } = useDistributorStore();
-  const { suppliers } = useSupplierStore();
-  const { inventory } = useInventoryStore();
-  const { transactions } = useCashStore();
+  const orders = useOrderStore((s) => s.orders);
+  const supplierOrders = useSupplierOrderStore((s) => s.orders);
+  const employees = useEmployeeStore((s) => s.employees);
+  const flowers = useFlowerStore((s) => s.flowers);
+  const distributors = useDistributorStore((s) => s.distributors);
+  const suppliers = useSupplierStore((s) => s.suppliers);
+  const inventory = useInventoryStore((s) => s.inventory);
+  const transactions = useCashStore((s) => s.transactions);
 
-  // Metrics
-  const totalRevenue = useMemo(() => {
-    return orders
-      .filter((o) => o.status !== 'cancelled')
-      .reduce((sum, o) => sum + o.totalAmount, 0);
-  }, [orders]);
+  // ---------- Bộ lọc ----------
+  const [preset, setPreset] = useState<Preset>('month');
+  const [range, setRange] = useState(() => presetRange('month'));
+  const [nppName, setNppName] = useState('');
+  const [nccName, setNccName] = useState('');
+  const [search, setSearch] = useState('');
+  const [groupBy, setGroupBy] = useState<GroupBy>('day');
 
-
-  const lowStockCount = useMemo(() => {
-    return inventory.filter((i) => i.currentStock <= i.minStock).length;
-  }, [inventory]);
-
-  const cashSummary = useMemo(() => {
-    const totalIncome = transactions
-      .filter((t) => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0);
-    const totalExpense = transactions
-      .filter((t) => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0);
-    return {
-      totalIncome,
-      totalExpense,
-      balance: totalIncome - totalExpense,
-    };
-  }, [transactions]);
-
-  const revenueChartData = Array.from({ length: 7 }, (_, index) => {
-    const date = dayjs().subtract(6 - index, 'day');
-    const dailyOrders = orders.filter((order) =>
-      order.status !== 'cancelled' && order.status !== 'huy' && dayjs(order.orderDate).isSame(date, 'day'));
-    return { date: date.format('DD/MM'), revenue: dailyOrders.reduce((sum, order) => sum + order.totalAmount, 0), orders: dailyOrders.length };
-  });
-
-  // Category distribution
-  const categoryChartData = useMemo(() => {
-    const map: Record<string, number> = {};
-    flowers.forEach((fl) => {
-      map[fl.category] = (map[fl.category] || 0) + fl.stock;
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [flowers]);
-
-  const formatVND = (num: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(num);
+  const choosePreset = (p: Preset) => {
+    setPreset(p);
+    setRange(presetRange(p));
+  };
+  const hasFilter = preset !== 'all' || nppName || nccName || search;
+  const resetFilters = () => {
+    choosePreset('all');
+    setNppName('');
+    setNccName('');
+    setSearch('');
   };
 
+  const nppOptions = useMemo(
+    () => distributors.map((d) => ({ id: d.id, name: d.name, code: d.code, phone: d.phone })),
+    [distributors],
+  );
+  const nccOptions = useMemo(
+    () => suppliers.map((s) => ({ id: s.id, name: s.name, code: s.code, phone: s.phone })),
+    [suppliers],
+  );
+
+  const inRange = (d?: string) => {
+    const v = ymd(d);
+    if (range.from && v < range.from) return false;
+    if (range.to && v > range.to) return false;
+    return true;
+  };
+  const q = removeVietnameseTones(search.trim());
+  const matches = (...parts: (string | undefined)[]) =>
+    !q || parts.some((p) => p && removeVietnameseTones(p).includes(q));
+
+  // Đơn bán theo lọc (ngày + NPP + tìm kiếm)
+  const filteredOrders = useMemo(() => {
+    const npp = nppName.trim().toLowerCase();
+    return orders.filter((o) => {
+      if (CANCELLED.has(o.status)) return false;
+      if (!inRange(o.orderDate)) return false;
+      if (npp && (o.distributorName || '').trim().toLowerCase() !== npp) return false;
+      return matches(
+        o.code,
+        o.distributorName,
+        o.notes,
+        ...(o.items || []).flatMap((i) => [i.flowerCode, i.flowerName]),
+      );
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, range, nppName, q]);
+
+  // Đơn nhập NCC theo lọc (ngày + NCC + tìm kiếm)
+  const filteredPurchases = useMemo(() => {
+    const ncc = nccName.trim().toLowerCase();
+    return supplierOrders.filter((o: SupplierOrder) => {
+      if (o.status === 'huy') return false;
+      if (!inRange(o.orderDate)) return false;
+      if (ncc && (o.supplierName || '').trim().toLowerCase() !== ncc) return false;
+      return matches(o.code, o.supplierName, o.notes, ...(o.items || []).flatMap((i) => [i.flowerCode, i.flowerName]));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supplierOrders, range, nccName, q]);
+
+  // ---------- Các ô tổng ----------
+  const totals = useMemo(() => {
+    const t = { sale: 0, cost: 0, shipping: 0, discount: 0, profit: 0, orders: filteredOrders.length, qty: 0, purchase: 0, purchaseCount: filteredPurchases.length };
+    for (const o of filteredOrders) {
+      const f = saleFigures(o);
+      t.sale += f.sale;
+      t.cost += f.cost;
+      t.shipping += f.shipping;
+      t.discount += f.discount;
+      t.profit += f.profit;
+      t.qty += (o.items || []).reduce((s, i) => s + (i.quantity || 0), 0);
+    }
+    for (const p of filteredPurchases) t.purchase += p.totalAmount || 0;
+    return t;
+  }, [filteredOrders, filteredPurchases]);
+
+  // ---------- Bảng lợi nhuận theo ngày / tháng ----------
+  const profitRows = useMemo(() => {
+    const map = new Map<string, { key: string; orders: number; sale: number; cost: number; discount: number; shipping: number; profit: number; purchase: number }>();
+    const row = (key: string) => {
+      let r = map.get(key);
+      if (!r) {
+        r = { key, orders: 0, sale: 0, cost: 0, discount: 0, shipping: 0, profit: 0, purchase: 0 };
+        map.set(key, r);
+      }
+      return r;
+    };
+    const keyOf = (d?: string) => (groupBy === 'day' ? ymd(d) : ymd(d).slice(0, 7));
+    for (const o of filteredOrders) {
+      const k = keyOf(o.orderDate);
+      if (!k) continue;
+      const f = saleFigures(o);
+      const r = row(k);
+      r.orders += 1;
+      r.sale += f.sale;
+      r.cost += f.cost;
+      r.discount += f.discount;
+      r.shipping += f.shipping;
+      r.profit += f.profit;
+    }
+    for (const p of filteredPurchases) {
+      const k = keyOf(p.orderDate);
+      if (k) row(k).purchase += p.totalAmount || 0;
+    }
+    return Array.from(map.values()).sort((a, b) => (a.key < b.key ? 1 : -1));
+  }, [filteredOrders, filteredPurchases, groupBy]);
+
+  const labelOf = (key: string) =>
+    groupBy === 'day' ? dayjs(key).format('DD/MM/YYYY') : `Tháng ${key.slice(5, 7)}/${key.slice(0, 4)}`;
+
+  const chartData = useMemo(
+    () =>
+      profitRows
+        .slice(0, groupBy === 'day' ? 31 : 12)
+        .reverse()
+        .map((r) => ({
+          label: groupBy === 'day' ? dayjs(r.key).format('DD/MM') : `${r.key.slice(5, 7)}/${r.key.slice(2, 4)}`,
+          'Tiền bán': r.sale,
+          'Lợi nhuận': r.profit,
+        })),
+    [profitRows, groupBy],
+  );
+
+  // ---------- Phần tổng quan cũ ----------
+  const lowStockCount = useMemo(() => inventory.filter((i) => i.currentStock <= i.minStock && i.minStock > 0).length, [inventory]);
+  const cashSummary = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    for (const t of transactions) {
+      if (!inRange(t.date)) continue;
+      if (t.type === 'income') income += t.amount;
+      else expense += t.amount;
+    }
+    return { income, expense, balance: income - expense };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, range]);
+
+  const rangeLabel =
+    preset === 'all' || (!range.from && !range.to)
+      ? 'Tất cả thời gian'
+      : `${range.from ? dayjs(range.from).format('DD/MM/YYYY') : '...'} – ${range.to ? dayjs(range.to).format('DD/MM/YYYY') : '...'}`;
+
+  const margin = totals.sale > 0 ? (totals.profit / totals.sale) * 100 : 0;
+
+  const kpis = [
+    { label: 'Tổng tiền bán', value: totals.sale, icon: TrendingUp, cls: 'bg-emerald-500/10 text-emerald-600', sub: `${fmt(totals.orders)} đơn • ${fmt(totals.qty)} cành/bó` },
+    { label: 'Tiền nhập (giá vốn hoa đã bán)', value: totals.cost, icon: PackagePlus, cls: 'bg-sky-500/10 text-sky-600', sub: `Đơn nhập NCC: ${fmtVND(totals.purchase)} (${fmt(totals.purchaseCount)} đơn)` },
+    { label: 'Tiền trừ hàng', value: totals.discount, icon: MinusCircle, cls: 'bg-rose-500/10 text-rose-600', sub: 'Khoản trừ cho khách' },
+    { label: 'Tiền cước xe', value: totals.shipping, icon: Truck, cls: 'bg-amber-500/10 text-amber-600', sub: 'Thu thêm theo đơn' },
+    { label: 'Lợi nhuận', value: totals.profit, icon: Coins, cls: 'bg-violet-500/10 text-violet-600', sub: `Bán − vốn − trừ hàng • ${margin.toFixed(1)}%` },
+  ];
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-7xl mx-auto">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-5 rounded-2xl border border-primary/15 shadow-sm">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-primary text-primary-foreground shadow-sm">
-              <Flower2 size={24} />
-            </span>
-            <div>
-              <h1 className="text-xl md:text-2xl font-bold tracking-tight text-foreground">
-                Hệ thống Quản lý Hoa Khang Thành
-              </h1>
-              <p className="text-xs md:text-sm text-muted-foreground">
-                Tổng quan tình hình kinh doanh, kho bãi và dòng tiền phân phối hoa tươi hôm nay
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Shortcuts */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            onClick={() => navigate('/don-hang')}
-            className="gap-1.5 shadow-sm bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus size={16} /> Tạo đơn sỉ mới
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigate('/ton-kho')}
-            className="gap-1.5 bg-card hover:bg-accent"
-          >
-            <PackagePlus size={16} /> Nhập kho hoa
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => navigate('/thu-chi')}
-            className="gap-1.5 bg-card hover:bg-accent"
-          >
-            <Wallet size={16} /> Sổ quỹ thu chi
-          </Button>
-        </div>
-      </div>
-
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Doanh thu */}
-        <div className="rounded-2xl border border-border bg-card p-4.5 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Tổng doanh thu đơn hàng</span>
-            <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <TrendingUp size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold text-foreground tracking-tight">
-              {formatVND(totalRevenue)}
-            </div>
-            <div className="flex items-center gap-1 mt-1 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
-              <ArrowUpRight size={14} />
-              <span>Tổng hợp từ đơn hàng hiện có</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Đơn hàng & chờ xử lý */}
-        <div
-          onClick={() => navigate('/don-hang')}
-          className="rounded-2xl border border-border bg-card p-4.5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Tổng đơn hàng</span>
-            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform">
-              <ShoppingCart size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold text-foreground tracking-tight flex items-baseline gap-2">
-              <span>{orders.length}</span>
-              <span className="text-xs font-normal text-muted-foreground">đơn</span>
-            </div>
-            <div className="flex items-center gap-1 mt-1 text-xs text-blue-600 dark:text-blue-400 font-medium">
-              <span>Xem chi tiết danh sách đơn →</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Tồn kho & Cảnh báo */}
-        <div
-          onClick={() => navigate('/ton-kho')}
-          className="rounded-2xl border border-border bg-card p-4.5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Tồn kho & Cảnh báo</span>
-            <div className={`p-2.5 rounded-xl ${lowStockCount > 0 ? 'bg-amber-500/10 text-amber-600' : 'bg-primary/10 text-primary'} group-hover:scale-105 transition-transform`}>
-              <Boxes size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className="text-2xl font-bold text-foreground tracking-tight flex items-baseline gap-2">
-              <span>{flowers.reduce((acc, f) => acc + f.stock, 0).toLocaleString('vi-VN')}</span>
-              <span className="text-xs font-normal text-muted-foreground">cành / bó</span>
-            </div>
-            <div className="flex items-center gap-1 mt-1 text-xs font-medium">
-              {lowStockCount > 0 ? (
-                <span className="text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                  <AlertTriangle size={14} /> Có {lowStockCount} mặt hàng sắp hết
-                </span>
-              ) : (
-                <span className="text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-                  <CheckCircle2 size={14} /> Tồn kho đảm bảo an toàn
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Tồn quỹ thực tế (Thu - Chi) */}
-        <div
-          onClick={() => navigate('/thu-chi')}
-          className="rounded-2xl border border-border bg-card p-4.5 shadow-sm hover:shadow-md transition-shadow cursor-pointer group"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Tồn quỹ ròng (Sổ quỹ)</span>
-            <div className="p-2.5 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 group-hover:scale-105 transition-transform">
-              <Wallet size={20} />
-            </div>
-          </div>
-          <div className="mt-3">
-            <div className={`text-2xl font-bold tracking-tight ${cashSummary.balance >= 0 ? 'text-foreground' : 'text-rose-600'}`}>
-              {formatVND(cashSummary.balance)}
-            </div>
-            <div className="flex items-center justify-between gap-1 mt-1 text-[11px] text-muted-foreground font-medium">
-              <span className="text-emerald-600">Thu: {formatVND(cashSummary.totalIncome)}</span>
-              <span className="text-rose-500">Chi: {formatVND(cashSummary.totalExpense)}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Network Overview: NPP & NCC stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div
-          onClick={() => navigate('/hoa')}
-          className="rounded-xl border border-border bg-card/60 p-4 flex items-center gap-3.5 hover:bg-muted/40 transition-colors cursor-pointer"
-        >
-          <div className="p-3 rounded-lg bg-rose-500/10 text-rose-600 shrink-0">
+    <div className="p-3 md:p-5 space-y-5 w-full">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-4 rounded-2xl border border-primary/15 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="p-2 rounded-xl bg-primary text-primary-foreground shadow-sm">
             <Flower2 size={22} />
-          </div>
+          </span>
           <div>
-            <div className="text-sm font-semibold text-foreground">{flowers.length} Giống hoa tươi</div>
-            <div className="text-xs text-muted-foreground">Đang phân phối sỉ toàn quốc</div>
+            <h1 className="text-lg md:text-xl font-bold tracking-tight text-foreground">Tổng quan kinh doanh</h1>
+            <p className="text-xs text-muted-foreground">Số liệu theo bộ lọc: {rangeLabel}</p>
           </div>
         </div>
-
-        <div
-          onClick={() => navigate('/nha-phan-phoi')}
-          className="rounded-xl border border-border bg-card/60 p-4 flex items-center gap-3.5 hover:bg-muted/40 transition-colors cursor-pointer"
-        >
-          <div className="p-3 rounded-lg bg-purple-500/10 text-purple-600 shrink-0">
-            <Store size={22} />
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-foreground">{distributors.length} Nhà phân phối</div>
-            <div className="text-xs text-muted-foreground">Chuỗi đại lý & shop hoa VIP</div>
-          </div>
-        </div>
-
-        <div
-          onClick={() => navigate('/nha-cung-cap')}
-          className="rounded-xl border border-border bg-card/60 p-4 flex items-center gap-3.5 hover:bg-muted/40 transition-colors cursor-pointer"
-        >
-          <div className="p-3 rounded-lg bg-emerald-500/10 text-emerald-600 shrink-0">
-            <Truck size={22} />
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-foreground">{suppliers.length} Nhà vườn / NCC</div>
-            <div className="text-xs text-muted-foreground">Đà Lạt, Mê Linh, Sa Đéc, Hà Lan</div>
-          </div>
-        </div>
-
-        <div
-          onClick={() => navigate('/nhan-vien')}
-          className="rounded-xl border border-border bg-card/60 p-4 flex items-center gap-3.5 hover:bg-muted/40 transition-colors cursor-pointer"
-        >
-          <div className="p-3 rounded-lg bg-sky-500/10 text-sky-600 shrink-0">
-            <Users size={22} />
-          </div>
-          <div>
-            <div className="text-sm font-semibold text-foreground">{employees.length} Nhân viên công ty</div>
-            <div className="text-xs text-muted-foreground">Cắm hoa, Kho lạnh & Kinh doanh</div>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" onClick={() => navigate('/don-hang')} className="gap-1.5">
+            <Plus size={16} /> Tạo đơn mới
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate('/don-hang-ncc')} className="gap-1.5 bg-card">
+            <PackagePlus size={16} /> Đơn nhập NCC
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => navigate('/thu-chi')} className="gap-1.5 bg-card">
+            <Wallet size={16} /> Thu chi
+          </Button>
         </div>
       </div>
 
-      {/* Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Doanh thu 7 ngày */}
-        <div className="lg:col-span-2 rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">Biểu đồ doanh thu 7 ngày gần đây</h2>
-              <p className="text-xs text-muted-foreground">Doanh số xuất bán sỉ hoa tươi theo ngày</p>
-            </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-muted text-foreground">
-              {dayjs().subtract(6, 'day').format('DD/MM')} – {dayjs().format('DD/MM/YYYY')}
-            </span>
-          </div>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={revenueChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                <XAxis dataKey="date" stroke="#888888" fontSize={12} tickLine={false} />
-                <YAxis
-                  stroke="#888888"
-                  fontSize={11}
-                  tickLine={false}
-                  tickFormatter={(val) => `${val / 1000000}tr`}
-                />
-                <Tooltip
-                  formatter={(value: number) => [formatVND(value), 'Doanh thu']}
-                  labelFormatter={(label) => `Ngày ${label}`}
-                  contentStyle={{ backgroundColor: '#18181b', color: '#fff', borderRadius: '8px', border: 'none' }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#2563eb"
-                  strokeWidth={2.5}
-                  fillOpacity={1}
-                  fill="url(#revenueGradient)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Phân bổ tồn kho theo nhóm hoa */}
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-          <div>
-            <h2 className="text-base font-semibold text-foreground">Cơ cấu loại hoa trong kho</h2>
-            <p className="text-xs text-muted-foreground">Tỷ lệ số lượng cành/bó theo chủng loại</p>
-          </div>
-          <div className="h-48 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryChartData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={45}
-                  outerRadius={75}
-                  paddingAngle={3}
-                  dataKey="value"
-                >
-                  {categoryChartData.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value: number) => [`${value} đơn vị`, 'Số lượng']} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs pt-2 border-t border-border/50">
-            {categoryChartData.slice(0, 6).map((item, idx) => (
-              <div key={item.name} className="flex items-center gap-1.5 truncate">
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: PIE_COLORS[idx % PIE_COLORS.length] }}
-                />
-                <span className="truncate text-muted-foreground">{item.name}:</span>
-                <span className="font-semibold text-foreground">{item.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Two Column Section: Recent Orders & Stock Warnings */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Đơn hàng mới nhất */}
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">Đơn đặt hàng sỉ mới nhất</h2>
-              <p className="text-xs text-muted-foreground">Các đơn hàng từ đại lý cần đóng gói & xuất kho</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/don-hang')}
-              className="text-xs text-primary hover:text-primary/80"
+      {/* Bộ lọc */}
+      <div className="rounded-2xl border border-border bg-card p-3 shadow-sm space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <CalendarDays size={16} className="text-muted-foreground" />
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => choosePreset(p.key)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                preset === p.key ? 'bg-primary text-primary-foreground border-primary' : 'bg-card hover:bg-muted border-border'
+              }`}
             >
+              {p.label}
+            </button>
+          ))}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground">Từ</span>
+            <input
+              type="date"
+              value={range.from}
+              onChange={(e) => {
+                setPreset('custom');
+                setRange((r) => ({ ...r, from: e.target.value }));
+              }}
+              className="h-8 rounded-lg border border-border bg-background px-2 text-xs"
+            />
+            <span className="text-muted-foreground">đến</span>
+            <input
+              type="date"
+              value={range.to}
+              onChange={(e) => {
+                setPreset('custom');
+                setRange((r) => ({ ...r, to: e.target.value }));
+              }}
+              className="h-8 rounded-lg border border-border bg-background px-2 text-xs"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <div className="relative">
+            <Search size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Tìm mã đơn, khách hàng, NCC, mã/tên hoa..."
+              className="w-full h-9 rounded-lg border border-border bg-background pl-8 pr-8 text-sm"
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <PartnerAutocomplete
+            value={nppName}
+            options={nppOptions}
+            allowCustom={false}
+            placeholder="Lọc theo NPP / khách hàng..."
+            onChange={(p) => setNppName(p.name || '')}
+            inputClassName="h-9 text-sm"
+          />
+          <PartnerAutocomplete
+            value={nccName}
+            options={nccOptions}
+            allowCustom={false}
+            placeholder="Lọc theo NCC / nhà vườn..."
+            onChange={(p) => setNccName(p.name || '')}
+            inputClassName="h-9 text-sm"
+          />
+        </div>
+        {hasFilter && (
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              {fmt(totals.orders)} đơn bán • {fmt(totals.purchaseCount)} đơn nhập NCC
+              {nppName && <> • NPP: <b className="text-foreground">{nppName}</b></>}
+              {nccName && <> • NCC: <b className="text-foreground">{nccName}</b></>}
+            </span>
+            <button type="button" onClick={resetFilters} className="text-primary hover:underline font-medium">
+              Xoá bộ lọc
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Các ô tổng theo lọc */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3">
+        {kpis.map((k) => (
+          <div key={k.label} className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-muted-foreground">{k.label}</span>
+              <div className={`p-2 rounded-xl ${k.cls}`}>
+                <k.icon size={18} />
+              </div>
+            </div>
+            <div className={`mt-2 text-xl md:text-2xl font-bold tracking-tight ${k.value < 0 ? 'text-rose-600' : 'text-foreground'}`}>
+              {fmtVND(k.value)}
+            </div>
+            <div className="mt-1 text-[11px] text-muted-foreground truncate" title={k.sub}>
+              {k.sub}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Lợi nhuận theo ngày / tháng */}
+      <div className="grid grid-cols-1 2xl:grid-cols-5 gap-4">
+        <div className="2xl:col-span-3 rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 p-4 border-b border-border">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Lợi nhuận theo {groupBy === 'day' ? 'ngày' : 'tháng'}</h2>
+              <p className="text-xs text-muted-foreground">Lợi nhuận = Tiền bán − Tiền nhập (giá vốn) − Trừ hàng</p>
+            </div>
+            <div className="inline-flex rounded-lg border border-border p-0.5 bg-muted/40">
+              {(['day', 'month'] as GroupBy[]).map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGroupBy(g)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                    groupBy === g ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Theo {g === 'day' ? 'ngày' : 'tháng'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="overflow-auto max-h-[460px]">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-muted/90 backdrop-blur text-xs text-muted-foreground">
+                <tr>
+                  <th className="text-left px-3 py-2 font-semibold">{groupBy === 'day' ? 'Ngày' : 'Tháng'}</th>
+                  <th className="text-right px-3 py-2 font-semibold">Số đơn</th>
+                  <th className="text-right px-3 py-2 font-semibold">Tiền bán</th>
+                  <th className="text-right px-3 py-2 font-semibold">Tiền nhập</th>
+                  <th className="text-right px-3 py-2 font-semibold">Trừ hàng</th>
+                  <th className="text-right px-3 py-2 font-semibold">Cước xe</th>
+                  <th className="text-right px-3 py-2 font-semibold">Lợi nhuận</th>
+                  <th className="text-right px-3 py-2 font-semibold">Tỷ suất</th>
+                  <th className="text-right px-3 py-2 font-semibold">Nhập NCC</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {profitRows.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="text-center text-muted-foreground py-10 text-sm">
+                      Không có dữ liệu trong bộ lọc này
+                    </td>
+                  </tr>
+                )}
+                {profitRows.map((r) => (
+                  <tr key={r.key} className="hover:bg-muted/30">
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">{labelOf(r.key)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.orders)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{fmt(r.sale)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-sky-600">{fmt(r.cost)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-rose-600">{fmt(r.discount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-amber-600">{fmt(r.shipping)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums font-bold ${r.profit < 0 ? 'text-rose-600' : 'text-violet-600'}`}>{fmt(r.profit)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      {r.sale > 0 ? `${((r.profit / r.sale) * 100).toFixed(1)}%` : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(r.purchase)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {profitRows.length > 0 && (
+                <tfoot className="sticky bottom-0 bg-muted/90 backdrop-blur font-bold text-sm">
+                  <tr>
+                    <td className="px-3 py-2">Tổng ({fmt(profitRows.length)} {groupBy === 'day' ? 'ngày' : 'tháng'})</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(totals.orders)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-emerald-600">{fmt(totals.sale)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-sky-600">{fmt(totals.cost)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-rose-600">{fmt(totals.discount)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-amber-600">{fmt(totals.shipping)}</td>
+                    <td className={`px-3 py-2 text-right tabular-nums ${totals.profit < 0 ? 'text-rose-600' : 'text-violet-600'}`}>{fmt(totals.profit)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{margin.toFixed(1)}%</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(totals.purchase)}</td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+        <div className="2xl:col-span-2 rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Biểu đồ tiền bán & lợi nhuận</h2>
+            <p className="text-xs text-muted-foreground">
+              {groupBy === 'day' ? 'Tối đa 31 ngày gần nhất trong bộ lọc' : 'Tối đa 12 tháng gần nhất trong bộ lọc'}
+            </p>
+          </div>
+          <div className="h-[380px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
+                <XAxis dataKey="label" fontSize={11} tickLine={false} />
+                <YAxis fontSize={11} tickLine={false} tickFormatter={(v) => `${Math.round(v / 1_000_000)}tr`} />
+                <Tooltip formatter={(v: number) => fmtVND(v)} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="Tiền bán" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Lợi nhuận" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* Tổng quan nhanh */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 2xl:grid-cols-6 gap-3">
+        {[
+          { icon: Flower2, cls: 'bg-rose-500/10 text-rose-600', title: `${fmt(flowers.length)} giống hoa`, sub: 'Danh sách hoa', to: '/hoa' },
+          { icon: Store, cls: 'bg-purple-500/10 text-purple-600', title: `${fmt(distributors.length)} nhà phân phối`, sub: 'Danh sách NPP', to: '/nha-phan-phoi' },
+          { icon: Truck, cls: 'bg-emerald-500/10 text-emerald-600', title: `${fmt(suppliers.length)} nhà vườn / NCC`, sub: 'Danh sách NCC', to: '/nha-cung-cap' },
+          { icon: Users, cls: 'bg-sky-500/10 text-sky-600', title: `${fmt(employees.length)} nhân viên`, sub: 'Danh sách nhân viên', to: '/nhan-vien' },
+          {
+            icon: Boxes,
+            cls: lowStockCount > 0 ? 'bg-amber-500/10 text-amber-600' : 'bg-primary/10 text-primary',
+            title: lowStockCount > 0 ? `${fmt(lowStockCount)} mặt hàng sắp hết` : 'Tồn kho ổn',
+            sub: 'Tồn kho',
+            to: '/ton-kho',
+          },
+          {
+            icon: Wallet,
+            cls: 'bg-violet-500/10 text-violet-600',
+            title: fmtVND(cashSummary.balance),
+            sub: `Thu chi theo lọc • Thu ${fmt(cashSummary.income)} / Chi ${fmt(cashSummary.expense)}`,
+            to: '/thu-chi',
+          },
+        ].map((c) => (
+          <div
+            key={c.to}
+            onClick={() => navigate(c.to)}
+            className="rounded-xl border border-border bg-card/60 p-3 flex items-center gap-3 hover:bg-muted/40 transition-colors cursor-pointer"
+          >
+            <div className={`p-2.5 rounded-lg shrink-0 ${c.cls}`}>
+              <c.icon size={20} />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-foreground truncate">{c.title}</div>
+              <div className="text-[11px] text-muted-foreground truncate" title={c.sub}>{c.sub}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Đơn mới nhất theo lọc & cảnh báo kho */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Đơn hàng mới nhất</h2>
+              <p className="text-xs text-muted-foreground">Theo bộ lọc đang chọn</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/don-hang')} className="text-xs text-primary">
               Xem tất cả →
             </Button>
           </div>
-
           <div className="divide-y divide-border/60">
-            {orders.slice(0, 5).map((order) => (
-              <div
-                key={order.id}
-                onClick={() => navigate('/don-hang')}
-                className="py-3 flex items-center justify-between gap-3 hover:bg-muted/30 px-2 rounded-lg cursor-pointer transition-colors"
-              >
-                <div className="space-y-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-primary">{order.code}</span>
-                    <span className="text-xs font-semibold text-foreground truncate">{order.distributorName}</span>
-                  </div>
-                  <div className="text-xs text-muted-foreground flex items-center gap-2">
-                    <span className="font-mono">{formatDate(order.orderDate)}</span>
-                    <span>•</span>
-                    <span>{order.items.length} loại hoa</span>
-                  </div>
-                </div>
-
-                <div className="text-right shrink-0 space-y-1">
-                  <div className="text-xs font-bold text-foreground">{formatVND(order.totalAmount)}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Cảnh báo tồn kho hoa & giao dịch gần đây */}
-        <div className="rounded-2xl border border-border bg-card p-5 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">Cảnh báo kho lạnh & Nhập gấp</h2>
-              <p className="text-xs text-muted-foreground">Các loại hoa có lượng tồn dưới ngưỡng tối thiểu</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate('/ton-kho')}
-              className="text-xs text-primary hover:text-primary/80"
-            >
-              Quản lý kho →
-            </Button>
-          </div>
-
-          <div className="space-y-2.5">
-            {inventory
-              .filter((i) => i.currentStock <= i.minStock)
-              .concat(inventory.filter((i) => i.currentStock > i.minStock))
-              .slice(0, 5)
-              .map((item) => {
-                const isLow = item.currentStock <= item.minStock;
+            {[...filteredOrders]
+              .sort((a, b) => (ymd(b.orderDate) > ymd(a.orderDate) ? 1 : -1))
+              .slice(0, 6)
+              .map((order) => {
+                const f = saleFigures(order);
                 return (
                   <div
-                    key={item.flowerId}
-                    className={`p-3 rounded-xl border flex items-center justify-between gap-3 ${
-                      isLow
-                        ? 'border-amber-300/60 bg-amber-500/5 dark:border-amber-800/60'
-                        : 'border-border/60 bg-card'
-                    }`}
+                    key={order.id}
+                    onClick={() => navigate('/don-hang')}
+                    className="py-2.5 flex items-center justify-between gap-3 hover:bg-muted/30 px-2 rounded-lg cursor-pointer"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                          isLow ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300' : 'bg-primary/10 text-primary'
-                        }`}
-                      >
-                        <Flower2 size={18} />
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-primary">{order.code}</span>
+                        <span className="text-xs font-semibold text-foreground truncate">{order.distributorName}</span>
                       </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-foreground truncate">{item.flowerName}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">{item.warehouse}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatDate(order.orderDate)} • {order.items.length} loại hoa
                       </div>
                     </div>
-
                     <div className="text-right shrink-0">
-                      <div className="text-xs font-bold text-foreground">
-                        {item.currentStock} {item.unit}
-                      </div>
-                      <div className="text-[11px]">
-                        {isLow ? (
-                          <span className="text-amber-600 dark:text-amber-400 font-medium">Cần nhập thêm</span>
-                        ) : (
-                          <span className="text-emerald-600 font-medium">Đủ hàng</span>
-                        )}
-                      </div>
+                      <div className="text-xs font-bold text-foreground">{fmtVND(order.totalAmount || f.sale)}</div>
+                      <div className={`text-[11px] ${f.profit < 0 ? 'text-rose-600' : 'text-violet-600'}`}>Lãi {fmt(f.profit)}</div>
                     </div>
                   </div>
                 );
               })}
+            {filteredOrders.length === 0 && <div className="text-xs text-muted-foreground py-6 text-center">Không có đơn</div>}
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-foreground">Cảnh báo tồn kho</h2>
+              <p className="text-xs text-muted-foreground">Các loại hoa có tồn dưới ngưỡng tối thiểu</p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => navigate('/ton-kho')} className="text-xs text-primary">
+              Quản lý kho →
+            </Button>
+          </div>
+          <div className="space-y-2">
+            {inventory
+              .filter((i) => i.currentStock <= i.minStock && i.minStock > 0)
+              .slice(0, 6)
+              .map((item) => (
+                <div key={`${item.flowerId}-${item.warehouse}`} className="p-2.5 rounded-xl border border-amber-300/60 bg-amber-500/5 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-foreground truncate">{item.flowerName}</div>
+                      <div className="text-[11px] text-muted-foreground truncate">{item.warehouse}</div>
+                    </div>
+                  </div>
+                  <div className="text-xs font-bold text-foreground shrink-0">
+                    {item.currentStock} {item.unit}
+                  </div>
+                </div>
+              ))}
+            {lowStockCount === 0 && (
+              <div className="text-xs text-emerald-600 flex items-center gap-1.5 py-6 justify-center">
+                <CheckCircle2 size={14} /> Tồn kho đảm bảo
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -863,18 +863,21 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
         let notes = '';
 
         if (isStandard13Cols) {
-          itemsSubtotal = parseSheetNumber(r[3]) || prev?.itemsSubtotal || 0;
-          shippingFee = parseSheetNumber(r[4]) || prev?.shippingFee || 0;
-          discount = parseSheetNumber(r[5]) || prev?.discount || 0;
-          totalAmount = parseSheetNumber(r[6]) || prev?.totalAmount || 0;
-          oldDebt = parseSheetNumber(r[7]) || prev?.oldDebt || 0;
-          totalPayment = parseSheetNumber(r[8]) || prev?.totalPayment || 0;
+          // Bố cục hiện tại: Google Sheets là chuẩn → lấy ĐÚNG số trên sheet (kể cả 0 / để trống).
+          // KHÔNG lấy lại số cũ trong trình duyệt (prev) — trước đây "0 || prev" làm số sai cũ
+          // trên web thắng số 0 đúng trên sheet rồi bị ghi ngược lên sheet (vd. Trừ hàng = Tổng tiền).
+          itemsSubtotal = parseSheetNumber(r[3]) || 0;
+          shippingFee = parseSheetNumber(r[4]) || 0;
+          discount = parseSheetNumber(r[5]) || 0;
+          totalAmount = parseSheetNumber(r[6]) || 0;
+          oldDebt = parseSheetNumber(r[7]) || 0;
+          totalPayment = parseSheetNumber(r[8]) || 0;
           // Không còn trạng thái trên sheet / web: giữ giá trị ẩn cũ (mặc định là đơn hợp lệ)
           status = (prev?.status || 'da_xac_nhan') as Order['status'];
           paymentStatus = (prev?.paymentStatus || 'unpaid') as Order['paymentStatus'];
-          creator = String(r[9] || '').trim() || prev?.creator || '';
-          totalQuantity = parseSheetNumber(r[10]) || prev?.totalQuantity || 0;
-          notes = String(r[11] || '').trim() || prev?.notes || '';
+          creator = String(r[9] || '').trim();
+          totalQuantity = parseSheetNumber(r[10]) || 0;
+          notes = String(r[11] || '').trim();
         } else if (isStandard15Cols) {
           itemsSubtotal = parseSheetNumber(r[3]) || prev?.itemsSubtotal || 0;
           shippingFee = parseSheetNumber(r[4]) || prev?.shippingFee || 0;

@@ -74,6 +74,8 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
 
       syncToSheets: async (isBackground = false, modules?: SyncableModule[]) => {
         if (get().isSyncing) {
+          // Đang gửi dở: ghi nhớ để gửi tiếp ngay sau lượt hiện tại (không bỏ mất module của lần gọi này)
+          (modules && modules.length > 0 ? modules : ALL_MODULES).forEach((m) => pendingModules.add(m));
           hasPendingSync = true;
           return false;
         }
@@ -85,6 +87,7 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
         try {
           const result = await syncAllToGoogleSheets(modules);
           if (result.success) {
+            syncRetryAttempt = 0;
             set((state) => ({
               isSyncing: false,
               isConnected: true,
@@ -118,7 +121,8 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
                 ...state.syncLogs.slice(0, 49),
               ],
             }));
-            toast.error(`Đồng bộ thất bại: ${result.error}`);
+            toast.error(`Đồng bộ thất bại: ${result.error}. Sẽ tự gửi lại...`);
+            scheduleSyncRetry(modules);
             return false;
           }
         } catch (err: any) {
@@ -135,7 +139,8 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
               ...state.syncLogs.slice(0, 49),
             ],
           }));
-          toast.error(`Lỗi: ${err?.message}`);
+          toast.error(`Lỗi: ${err?.message}. Sẽ tự gửi lại...`);
+          scheduleSyncRetry(modules);
           return false;
         } finally {
           set({ isSyncing: false });
@@ -222,6 +227,33 @@ let applyingRemoteData = false;
 let initialPullDone = false;
 const pendingModules = new Set<SyncableModule>();
 let hasPendingSync = false;
+
+const ALL_MODULES: SyncableModule[] = [
+  'orders', 'flowers', 'distributors', 'suppliers', 'supplierOrders',
+  'debtRecords', 'transactions', 'inventory', 'employees', 'dailyStock',
+];
+
+/**
+ * Gửi lên Google Sheets bị lỗi (mạng, Google giới hạn số lần đọc/ghi mỗi phút, lỗi 5xx...)
+ * → tự gửi lại các module đó sau 10s, 20s, 40s... (tối đa 5 phút) cho tới khi thành công,
+ * để dữ liệu vừa thêm/sửa trên web không bị "kẹt" mà không lên sheet.
+ */
+let syncRetryAttempt = 0;
+let syncRetryTimer: ReturnType<typeof setTimeout> | null = null;
+const retryModules = new Set<SyncableModule>();
+function scheduleSyncRetry(modules?: SyncableModule[]) {
+  (modules && modules.length > 0 ? modules : ALL_MODULES).forEach((m) => retryModules.add(m));
+  if (syncRetryTimer) return;
+  const delay = Math.min(10000 * 2 ** syncRetryAttempt, 5 * 60 * 1000);
+  syncRetryAttempt += 1;
+  syncRetryTimer = setTimeout(() => {
+    syncRetryTimer = null;
+    const mods = Array.from(retryModules);
+    retryModules.clear();
+    if (!initialPullDone) return; // đang tải lại từ sheet (vd. đổi sheet) thì không gửi dữ liệu cũ
+    void useGoogleSheetsStore.getState().syncToSheets(true, mods);
+  }, delay);
+}
 
 /**
  * Kích hoạt đồng bộ ngay lập tức cho các module cụ thể mà không cần chờ debounce
@@ -331,6 +363,13 @@ export async function reloadFromNewSpreadsheet(): Promise<boolean> {
   pendingModules.clear();
   hasPendingSync = false;
   initialPullDone = false;
+  // Huỷ lượt gửi lại đang chờ: dữ liệu đó thuộc sheet cũ
+  if (syncRetryTimer) {
+    clearTimeout(syncRetryTimer);
+    syncRetryTimer = null;
+  }
+  retryModules.clear();
+  syncRetryAttempt = 0;
 
   // Đợi lượt đồng bộ đang chạy (nếu có) xong, tối đa 60 giây
   for (let i = 0; i < 120 && useGoogleSheetsStore.getState().isSyncing; i++) {
