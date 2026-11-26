@@ -50,6 +50,16 @@ export function isValidSpreadsheetId(id?: string | null): boolean {
  * Không có / không hợp lệ thì giữ ID mặc định trong biến môi trường.
  * Sheet phải được chia sẻ cho email tài khoản dịch vụ thì mới đọc/ghi được.
  */
+/** Đọc JSON từ Request (Worker / Pages); hỗ trợ body nén gzip (header X-Body-Encoding: gzip) */
+export async function readRequestJson(request: Request): Promise<unknown> {
+  if ((request.headers.get('X-Body-Encoding') || '').toLowerCase() === 'gzip' && request.body) {
+    const text = await new Response(request.body.pipeThrough(new DecompressionStream('gzip'))).text();
+    return text ? JSON.parse(text) : {};
+  }
+  const text = await request.text();
+  return text ? JSON.parse(text) : {};
+}
+
 export function applySpreadsheetOverride(cfg: SheetsConfig, id?: string | null): SheetsConfig {
   const clean = (id || '').trim();
   if (!isValidSpreadsheetId(clean) || clean === cfg.spreadsheetId) return cfg;

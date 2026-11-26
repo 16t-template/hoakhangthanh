@@ -201,10 +201,24 @@ export async function syncAllToGoogleSheets(modules?: SyncableModule[]): Promise
       payload.dailyStock = useDailyStockReconcileStore.getState().records;
     }
 
+    // Nén gzip trước khi gửi: toàn bộ đơn + chi tiết ~10 MB → ~1 MB (tránh lỗi 413 quá dung lượng)
+    const json = JSON.stringify(payload);
+    let body: BodyInit = json;
+    const extraHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (typeof CompressionStream !== 'undefined') {
+      try {
+        body = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+        extraHeaders['Content-Type'] = 'application/octet-stream';
+        extraHeaders['X-Body-Encoding'] = 'gzip';
+      } catch {
+        body = json;
+      }
+    }
+
     const res = await fetch('/api/google-sheets/sync-all', {
       method: 'POST',
-      headers: sheetsRequestHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify(payload),
+      headers: sheetsRequestHeaders(extraHeaders),
+      body,
     });
 
     const text = await res.text();

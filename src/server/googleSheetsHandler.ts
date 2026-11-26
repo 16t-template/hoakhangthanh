@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { gunzipSync } from 'node:zlib';
 import { applySpreadsheetOverride, handleSheetsApi, resolveSheetsConfig, type SheetsEnv } from './sheetsCore.js';
 
 /**
@@ -9,16 +10,23 @@ export async function googleSheetsHandler(req: IncomingMessage & { body?: unknow
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Cache-Control', 'no-store');
 
+  // Body có thể được nén gzip (header X-Body-Encoding: gzip) để giảm dung lượng gửi lên
+  const isGzip = String(req.headers['x-body-encoding'] || '').toLowerCase() === 'gzip';
+  const parseBuffer = (buf: Buffer): unknown => {
+    const text = (isGzip ? gunzipSync(buf) : buf).toString('utf8');
+    return text ? JSON.parse(text) : {};
+  };
   const readJson = async (): Promise<unknown> => {
     if (req.body !== undefined) {
+      if (Buffer.isBuffer(req.body)) return parseBuffer(req.body);
       return typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
     }
     return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', (chunk) => (body += chunk));
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
       req.on('end', () => {
         try {
-          resolve(body ? JSON.parse(body) : {});
+          resolve(parseBuffer(Buffer.concat(chunks)));
         } catch (e) {
           reject(e);
         }
