@@ -17,7 +17,7 @@ export interface ActionRights {
 // --- Cấu hình quyền hiển thị từng cột của bảng Chi tiết đơn hàng / Mặt hàng ---
 export interface OrderDetailColumnRights {
   stt: boolean;               // Cột #: Số thứ tự
-  flower: boolean;            // Cột Mặt hàng: Tên hoa & Mã hoa
+  flower: boolean;            // Cột Mã hoa
   quantity: boolean;          // Cột Số lượng
   costPrice: boolean;         // Cột Giá nhập (Giá vốn) - Nhạy cảm kinh doanh
   unitPrice: boolean;         // Cột Giá bán
@@ -39,7 +39,7 @@ export const ORDER_DETAIL_COLUMNS_CONFIG: {
   isSensitive?: boolean;
 }[] = [
   { id: 'stt', name: '# (Số thứ tự)', description: 'Hiển thị cột đánh số thứ tự mặt hàng trong đơn' },
-  { id: 'flower', name: 'Mặt hàng', description: 'Tên hoa, mã hoa và chủng loại' },
+  { id: 'flower', name: 'Mã hoa', description: 'Mã hoa trong chi tiết đơn hàng' },
   { id: 'quantity', name: 'Số lượng', description: 'Số lượng từng loại hoa khách đặt' },
   { id: 'costPrice', name: 'Giá nhập (vốn)', description: 'Đơn giá vốn hoa nhập từ nhà vườn', isSensitive: true },
   { id: 'unitPrice', name: 'Giá bán', description: 'Đơn giá xuất bán cho khách / NPP' },

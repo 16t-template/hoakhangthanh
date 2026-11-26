@@ -53,11 +53,7 @@ const INITIAL_COLUMNS: ColumnDef[] = [
   { id: 'salesAmount', label: 'Tiền bán hoa', visible: true, minWidth: 125, width: 135, order: 7 },
   { id: 'collectedAmount', label: 'Tiền thu nợ', visible: true, minWidth: 120, width: 130, order: 8 },
   { id: 'finalDebt', label: 'Công nợ cuối', visible: true, minWidth: 125, width: 135, order: 9 },
-  { id: 'status', label: 'Trạng thái', visible: true, minWidth: 105, width: 115, order: 10 },
-  { id: 'actions', label: 'Thao tác', visible: true, minWidth: 80, width: 85, order: 11 },
-  { id: 'region', label: 'Khu vực', visible: false, minWidth: 120, width: 130, order: 12 },
-  { id: 'tier', label: 'Cấp đại lý', visible: false, minWidth: 130, width: 140, order: 13 },
-  { id: 'discount', label: 'Chiết khấu', visible: false, minWidth: 90, width: 100, order: 14 },
+  { id: 'actions', label: 'Thao tác', visible: true, minWidth: 80, width: 85, order: 10 },
 ];
 
 export default function NPPPage() {
@@ -681,32 +677,10 @@ export default function NPPPage() {
           </span>
         );
       }
-      case 'region':
-        return <span className="text-xs text-muted-foreground">{row.region}</span>;
-      case 'tier':
-        return (
-          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-            {row.tier}
-          </span>
-        );
-      case 'discount':
-        return <span className="text-xs font-bold text-primary">{row.discount}%</span>;
       case 'currentDebt':
         return (
           <span className={`text-xs font-mono font-bold ${row.currentDebt > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
             {formatNumber(row.currentDebt)}
-          </span>
-        );
-      case 'status':
-        return (
-          <span
-            className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium border ${
-              row.status === 'active'
-                ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                : 'bg-muted text-muted-foreground border-border'
-            }`}
-          >
-            {row.status === 'active' ? 'Hoạt động' : 'Tạm khóa'}
           </span>
         );
       case 'actions':

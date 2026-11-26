@@ -807,7 +807,7 @@ export function DonHangLichSu() {
                   <table className="w-full text-xs">
                     <thead className="bg-muted text-[11px] font-semibold text-muted-foreground uppercase">
                       <tr>
-                        <th className="py-2 px-3 text-left">Tên hoa</th>
+                        <th className="py-2 px-3 text-left">Mã hoa</th>
                         <th className="py-2 px-3 text-right">Số lượng</th>
                         <th className="py-2 px-3 text-right">Đơn giá</th>
                         <th className="py-2 px-3 text-right">Thành tiền</th>
@@ -816,14 +816,11 @@ export function DonHangLichSu() {
                     <tbody className="divide-y divide-border">
                       {selectedLog.snapshot.items.map((item, idx) => (
                         <tr key={idx} className="hover:bg-muted/30">
-                          <td className="py-2 px-3 font-medium text-foreground">
-                            <div>{item.flowerName}</div>
-                            {item.flowerCode && (
-                              <span className="text-[10px] text-muted-foreground font-mono">{item.flowerCode}</span>
-                            )}
+                          <td className="py-2 px-3 font-mono font-bold text-primary">
+                            {item.flowerCode || item.flowerName}
                           </td>
                           <td className="py-2 px-3 text-right font-mono font-bold">
-                            {formatNumber(item.quantity)} {item.unit || 'cành'}
+                            {formatNumber(item.quantity)}
                           </td>
                           <td className="py-2 px-3 text-right font-mono text-muted-foreground">
                             {formatNumber(item.unitPrice)}

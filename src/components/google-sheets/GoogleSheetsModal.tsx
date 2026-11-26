@@ -23,7 +23,7 @@ interface Props {
 
 const MODULE_SHEETS = [
   { name: 'DON_HANG', label: 'Đơn hàng bán', cols: 17, color: 'bg-blue-500', desc: 'Mã đơn, khách hàng, số lượng hoa, cước xe, tổng tiền, nợ cũ, thanh toán...' },
-  { name: 'CHI_TIET_DON_HANG', label: 'Chi tiết hoa từng đơn', cols: 12, color: 'bg-emerald-500', desc: 'Mã hoa, tên hoa, số lượng, giá vốn, giá bán, thành tiền, lợi nhuận...' },
+  { name: 'CHI_TIET_DON_HANG', label: 'Chi tiết hoa từng đơn', cols: 11, color: 'bg-emerald-500', desc: 'ID dòng (id), mã đơn (id_don_hang), ngày đặt, khách hàng, mã hoa, giá bán, số lượng, thành tiền, giá vốn, thành tiền vốn, lợi nhuận' },
   { name: 'DANH_SACH_HOA', label: 'Danh mục hoa', cols: 7, color: 'bg-rose-500', desc: 'Mã hoa, tên hoa, tên riêng theo người đặt, ĐVT, danh mục, trạng thái...' },
   { name: 'NHA_PHAN_PHOI', label: 'Nhà phân phối', cols: 14, color: 'bg-sky-500', desc: 'Tên NPP, SĐT, địa chỉ, công nợ cũ, tiền mua, đã trả, nợ hiện tại, cảnh báo nợ...' },
   { name: 'NHA_CUNG_CAP', label: 'Nhà cung cấp', cols: 11, color: 'bg-amber-500', desc: 'Tên nhà vườn/NCC, người đại diện, SĐT, vùng trồng, công nợ cũ, tiền nhập...' },

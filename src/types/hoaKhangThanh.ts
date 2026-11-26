@@ -59,6 +59,7 @@ export interface Distributor {
 }
 
 export interface OrderItem {
+  id?: string; // ID của từng dòng chi tiết đơn hàng
   flowerId: string;
   flowerCode: string;
   flowerName: string;

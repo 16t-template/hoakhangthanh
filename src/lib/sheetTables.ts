@@ -61,18 +61,20 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
       values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '', '']],
     });
 
-    // 2. CHI_TIET_DON_HANG (Thứ tự mới: Mã ĐH, Ngày, Khách hàng, Mã hoa, Giá bán, SL, TT bán, Giá vốn, TT vốn, Lợi nhuận, Tên hoa, ĐVT)
+    // 2. CHI_TIET_DON_HANG (11 cột A–K: ID dòng [id], Mã ĐH [id_don_hang], Ngày, Khách hàng, Mã hoa, Giá bán, SL, TT bán, Giá vốn, TT vốn, Lợi nhuận; đã bỏ Tên hoa và ĐVT)
     const detailRows: any[][] = [];
     body.orders.forEach((o) => {
-      (o.items || []).forEach((item: any) => {
+      (o.items || []).forEach((item: any, idx: number) => {
         const qty = item.quantity || 0;
         const cost = item.costPrice || 0;
         const price = item.unitPrice || 0;
         const importTot = item.importTotal ?? (qty * cost);
         const amt = item.amount ?? (qty * price);
         const prof = item.profit ?? (amt - importTot);
+        const rowId = item.id || `${o.code || 'DH'}-${idx + 1}`;
 
         detailRows.push([
+          rowId,
           o.code || '',
           toSheetDate(o.orderDate),
           o.distributorName || '',
@@ -83,15 +85,13 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
           cost,
           importTot,
           prof,
-          item.flowerName || '',
-          item.unit || 'cành',
         ]);
       });
     });
 
     batchData.push({
-      range: 'CHI_TIET_DON_HANG!A2:L' + Math.max(2, detailRows.length + 1),
-      values: detailRows.length > 0 ? detailRows : [['', '', '', '', '', '', '', '', '', '', '', '']],
+      range: 'CHI_TIET_DON_HANG!A2:K' + Math.max(2, detailRows.length + 1),
+      values: detailRows.length > 0 ? detailRows : [['', '', '', '', '', '', '', '', '', '', '']],
     });
   }
 
@@ -112,7 +112,7 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
     });
   }
 
-  // 4. NHA_PHAN_PHOI (12 cột A–L: đã bỏ "Người liên hệ" và "Khu vực")
+  // 4. NHA_PHAN_PHOI (8 cột A–H: id, Tên, SĐT, Địa chỉ, Công nợ cũ, Tổng tiền mua, Đã thanh toán, Công nợ hiện tại)
   if (body.distributors) {
     const rows = body.distributors.map((d) => [
       d.code || '',
@@ -123,14 +123,10 @@ export function buildSheetTables(body: SheetSyncBody): SheetTable[] {
       d.totalRevenue || 0,
       d.collectedAmount || 0,
       d.currentDebt ?? ((d.oldDebt || 0) + (d.totalRevenue || 0) - (d.collectedAmount || 0)),
-      toSheetDate(d.lastOrderDate),
-      d.daysSinceLastOrder ? `${d.daysSinceLastOrder} ngày` : '',
-      d.isOverdue ? '⚠️ Quá hạn' : 'Bình thường',
-      d.status || 'Hoạt động',
     ]);
     batchData.push({
-      range: 'NHA_PHAN_PHOI!A2:L' + Math.max(2, rows.length + 1),
-      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '', '', '', '', '']],
+      range: 'NHA_PHAN_PHOI!A2:H' + Math.max(2, rows.length + 1),
+      values: rows.length > 0 ? rows : [['', '', '', '', '', '', '', '']],
     });
   }
 

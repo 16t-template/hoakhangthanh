@@ -221,7 +221,7 @@ export function DonHangDetailModal({ order, onClose, onEdit }: Props) {
                   <thead>
                     <tr className="bg-muted/60 text-muted-foreground font-semibold border-b border-border text-[11px] uppercase tracking-wider">
                       {itemRights.columns.stt && <th className="py-2.5 px-1.5 text-center w-8">#</th>}
-                      {itemRights.columns.flower && <th className="py-2.5 px-3 min-w-[200px]">Mặt hàng</th>}
+                      {itemRights.columns.flower && <th className="py-2.5 px-3 min-w-[120px]">Mã hoa</th>}
                       {itemRights.columns.quantity && <th className="py-2.5 px-2 text-right w-20">Số lượng</th>}
                       {itemRights.columns.costPrice && <th className="py-2.5 px-2 text-right w-24">Giá nhập</th>}
                       {itemRights.columns.unitPrice && <th className="py-2.5 px-2 text-right w-24">Giá bán</th>}
@@ -244,9 +244,8 @@ export function DonHangDetailModal({ order, onClose, onEdit }: Props) {
                             <td className="py-1.5 px-1 text-center font-mono text-muted-foreground text-[11px]">{idx + 1}</td>
                           )}
                           {itemRights.columns.flower && (
-                            <td className="py-1.5 px-2 font-medium text-foreground">
-                              <div>{item.flowerName}</div>
-                              <span className="text-[10px] text-muted-foreground font-mono">{item.flowerCode}</span>
+                            <td className="py-1.5 px-3 font-bold font-mono text-primary text-xs">
+                              {item.flowerCode || item.flowerName}
                             </td>
                           )}
                           {itemRights.columns.quantity && (

@@ -1092,7 +1092,7 @@
      - Đã chạy tiến trình kết nối Google Sheets API v4 bằng Google Service Account (`ca-nhan@h161-508101.iam.gserviceaccount.com`).
      - Tự động xóa sheet mặc định `Trang tính1` và tạo mới **11 Sheets** tương ứng với từng module dữ liệu của hệ thống:
        1. `DON_HANG` (19 cột): Mã đơn, Ngày đặt, NPP/Khách hàng, SĐT, Địa chỉ, SL hoa, Thành tiền, Cước xe, Trừ hàng, Tổng tiền, Công nợ cũ, Thanh toán, Đã thanh toán, Còn nợ đơn, Trạng thái, TT thanh toán, Người tạo, Ghi chú, Cập nhật lúc.
-       2. `CHI_TIET_DON_HANG` (12 cột): Mã đơn, Ngày đặt, Khách hàng, Mã hoa, Tên hoa, Số lượng, ĐVT, Giá vốn, Giá bán, Thành tiền vốn, Thành tiền bán, Lợi nhuận.
+       2. `CHI_TIET_DON_HANG` (11 cột): id (ID từng dòng), id_don_hang (Mã đơn), Ngày đặt, Khách hàng, Mã hoa, Giá bán, Số lượng, Thành tiền bán, Giá vốn, Thành tiền vốn, Lợi nhuận.
        3. `DANH_SACH_HOA` (7 cột): Mã hoa, Tên hoa, Tên riêng, Đơn vị tính, Danh mục hoa, Trạng thái, Ghi chú.
        4. `NHA_PHAN_PHOI` (14 cột): Mã NPP, Tên nhà phân phối, Người liên hệ, SĐT, Địa chỉ, Khu vực, Công nợ cũ, Tổng tiền mua, Đã trả, Công nợ hiện tại, Ngày lên đơn gần nhất, Số ngày chưa mua, Cảnh báo nợ, Trạng thái.
        5. `NHA_CUNG_CAP` (11 cột): Mã NCC, Tên nhà cung cấp, Người đại diện, SĐT, Địa chỉ, Khu vực trồng, Công nợ cũ, Tổng tiền nhập, Đã trả NCC, Công nợ hiện tại, Trạng thái.

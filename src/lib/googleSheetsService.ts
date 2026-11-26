@@ -582,7 +582,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
       });
       const seenDetailRows = new Set<string>();
       const detailRows = (sheetMap['CHI_TIET_DON_HANG'] || []).filter((row) => {
-        const key = JSON.stringify(row.slice(0, 12));
+        const key = JSON.stringify(row.slice(0, 13));
         if (seenDetailRows.has(key)) return false;
         seenDetailRows.add(key);
         return true;
@@ -590,29 +590,44 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
       const itemsByOrderCode = new Map<string, OrderItem[]>();
 
       for (const row of detailRows) {
-        const orderCode = String(row[0] || '').trim();
-        if (!orderCode) continue;
+        if (!row || row.length === 0) continue;
 
         // Bỏ qua dòng tiêu đề nếu lẫn vào dữ liệu
-        const col0 = orderCode.toLowerCase();
+        const col0 = String(row[0] || '').trim().toLowerCase();
+        const col1 = String(row[1] || '').trim().toLowerCase();
         if (
+          col0 === 'id' ||
+          col0 === 'stt' ||
+          col0 === 'id_dong' ||
+          col0 === 'id dòng' ||
           col0 === 'id_don_hang' ||
           col0 === 'mã đơn hàng' ||
           col0 === 'ma_don' ||
-          String(row[1] || '').trim().toLowerCase() === 'ngay' ||
-          String(row[1] || '').trim().toLowerCase() === 'ngày đặt'
+          col1 === 'id_don_hang' ||
+          col1 === 'mã đơn hàng' ||
+          col1 === 'ma_don' ||
+          col1 === 'ngay' ||
+          col1 === 'ngày đặt'
         ) {
           continue;
         }
 
         // Nhận diện linh hoạt cấu trúc sheet CHI_TIET_DON_HANG:
-        // Cũ (12 cột): r[3]=Mã hoa, r[4]=Tên hoa, r[5]=SL, r[6]=ĐVT, r[7]=Giá vốn, r[8]=Giá bán, r[9]=TT vốn, r[10]=TT bán, r[11]=Lợi nhuận
-        // Mới (12 cột theo yêu cầu người dùng):
-        //   r[3]=Mã hoa, r[4]=Giá bán, r[5]=SL, r[6]=TT bán, r[7]=Giá vốn, r[8]=TT vốn, r[9]=Lợi nhuận, r[10]=Tên hoa, r[11]=ĐVT
-        // Layout 10 cột cũ (id_don_hang, ngay, khach_hang, id_hoa, gia_ban, slg, tien_ban, gia_nhap, tien_nhap, loi_nhuan):
-        //   r[3]=id_hoa, r[4]=Giá bán, r[5]=SL, r[6]=TT bán, r[7]=Giá vốn, r[8]=TT vốn, r[9]=Lợi nhuận
-        const isNewDetailLayout = isNumericString(row[4]) && isNumericString(row[6]);
+        // Cấu trúc 11 cột chuẩn mới (theo yêu cầu: bỏ Tên hoa và ĐVT):
+        //   r[0]=id (ID từng dòng), r[1]=id_don_hang (Mã đơn), r[2]=Ngày, r[3]=Khách hàng, r[4]=Mã hoa,
+        //   r[5]=Giá bán, r[6]=SL, r[7]=TT bán, r[8]=Giá vốn, r[9]=TT vốn, r[10]=Lợi nhuận
+        // Cấu trúc 13 cột (có Tên hoa r[11] & ĐVT r[12])
+        // Cấu trúc 12 cột cũ:
+        //   r[0]=Mã đơn, r[1]=Ngày, r[2]=Khách hàng, r[3]=Mã hoa, r[4]=Giá bán, r[5]=SL, r[6]=TT bán,
+        //   r[7]=Giá vốn, r[8]=TT vốn, r[9]=Lợi nhuận, r[10]=Tên hoa, r[11]=ĐVT
+        const is11or13Col =
+          (isNumericString(row[5]) && isNumericString(row[7])) ||
+          (row[2] && (String(row[2]).includes('/') || String(row[2]).includes('-'))) ||
+          row.length === 11 ||
+          row.length >= 13;
 
+        let rowId = '';
+        let orderCode = '';
         let flowerCode = '';
         let flowerName = '';
         let quantity = 0;
@@ -623,27 +638,45 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
         let amount = 0;
         let profit = 0;
 
-        if (isNewDetailLayout) {
-          flowerCode = String(row[3] || '').trim();
-          unitPrice = parseSheetNumber(row[4]);
-          quantity = parseSheetNumber(row[5]);
-          amount = parseSheetNumber(row[6]) || (quantity * unitPrice);
-          costPrice = parseSheetNumber(row[7]);
-          importTotal = parseSheetNumber(row[8]) || (quantity * costPrice);
-          profit = parseSheetNumber(row[9]) || (amount - importTotal);
-          flowerName = String(row[10] || '').trim();
-          unit = String(row[11] || '').trim();
-        } else {
-          flowerCode = String(row[3] || '').trim();
-          flowerName = String(row[4] || '').trim();
-          quantity = parseSheetNumber(row[5]);
-          unit = String(row[6] || '').trim();
-          costPrice = parseSheetNumber(row[7]);
-          unitPrice = parseSheetNumber(row[8]);
+        if (is11or13Col) {
+          rowId = String(row[0] || '').trim();
+          orderCode = String(row[1] || '').trim();
+          flowerCode = String(row[4] || '').trim();
+          unitPrice = parseSheetNumber(row[5]);
+          quantity = parseSheetNumber(row[6]);
+          amount = parseSheetNumber(row[7]) || (quantity * unitPrice);
+          costPrice = parseSheetNumber(row[8]);
           importTotal = parseSheetNumber(row[9]) || (quantity * costPrice);
-          amount = parseSheetNumber(row[10]) || (quantity * unitPrice);
-          profit = parseSheetNumber(row[11]) || (amount - importTotal);
+          profit = parseSheetNumber(row[10]) || (amount - importTotal);
+          flowerName = String(row[11] || '').trim();
+          unit = String(row[12] || '').trim();
+        } else {
+          orderCode = String(row[0] || '').trim();
+          const isNewDetailLayout = isNumericString(row[4]) && isNumericString(row[6]);
+          if (isNewDetailLayout) {
+            flowerCode = String(row[3] || '').trim();
+            unitPrice = parseSheetNumber(row[4]);
+            quantity = parseSheetNumber(row[5]);
+            amount = parseSheetNumber(row[6]) || (quantity * unitPrice);
+            costPrice = parseSheetNumber(row[7]);
+            importTotal = parseSheetNumber(row[8]) || (quantity * costPrice);
+            profit = parseSheetNumber(row[9]) || (amount - importTotal);
+            flowerName = String(row[10] || '').trim();
+            unit = String(row[11] || '').trim();
+          } else {
+            flowerCode = String(row[3] || '').trim();
+            flowerName = String(row[4] || '').trim();
+            quantity = parseSheetNumber(row[5]);
+            unit = String(row[6] || '').trim();
+            costPrice = parseSheetNumber(row[7]);
+            unitPrice = parseSheetNumber(row[8]);
+            importTotal = parseSheetNumber(row[9]) || (quantity * costPrice);
+            amount = parseSheetNumber(row[10]) || (quantity * unitPrice);
+            profit = parseSheetNumber(row[11]) || (amount - importTotal);
+          }
         }
+
+        if (!orderCode) continue;
 
         const matchedFlower =
           flowerByCode.get(flowerCode.toLowerCase()) ||
@@ -660,7 +693,9 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
 
         const finalUnit = unit || matchedFlower?.unit || previousItem?.unit || 'Cành';
 
+        const currentItems = itemsByOrderCode.get(orderCode) || [];
         const item: OrderItem = {
+          id: rowId || previousItem?.id || `${orderCode}-${currentItems.length + 1}`,
           flowerId: matchedFlower?.id || previousItem?.flowerId || `hoa-sheet-${flowerCode || finalFlowerName}`,
           flowerCode: flowerCode || matchedFlower?.code || '',
           flowerName: finalFlowerName,
@@ -672,7 +707,6 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           amount,
           profit,
         };
-        const currentItems = itemsByOrderCode.get(orderCode) || [];
         currentItems.push(item);
         itemsByOrderCode.set(orderCode, currentItems);
       }
