@@ -73,7 +73,7 @@ export default function DonHangNCCPage() {
 
   // Pagination
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(100);
 
   // Modals
   const [isFormOpen, setIsFormOpen] = useState(false);

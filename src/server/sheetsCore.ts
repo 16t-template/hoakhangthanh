@@ -135,7 +135,7 @@ const PULL_RANGES = [
   'DON_HANG!A2:S',
   'NHAN_VIEN!A2:L',
   'THU_CHI!A2:I',
-  'TON_KHO!A2:I',
+  'TON_KHO!A2:K',
   'CHI_TIET_DON_HANG!A2:N',
   'DON_NHAP_NCC!A2:L',
   'CONG_NO_NPP!A2:J',
@@ -320,6 +320,10 @@ export async function handleSheetsApi(
       };
     }
 
+    if (method === 'POST' && path === '/api/google-sheets/sync-rows') {
+      return await handleSyncRows(((await readJson()) || {}) as SyncRowsBody, cfg, api);
+    }
+
     if (method === 'GET' && path === '/api/google-sheets/pull-all') {
       const token = await getAccessToken(cfg);
       const metaRes = await fetch(`${api}?fields=sheets.properties.title`, { headers: { Authorization: `Bearer ${token}` } });
@@ -340,4 +344,137 @@ export async function handleSheetsApi(
     console.error('[GoogleSheets Error]:', error);
     return { status: 500, body: { success: false, error: error instanceof Error ? error.message : String(error) } };
   }
+}
+
+
+// ---------- Ghi theo dòng (chỉ gửi dòng mới / đổi / xoá) ----------
+
+export interface SyncRowsTable {
+  /** Tên sheet, vd 'DON_HANG' */
+  sheet: string;
+  /** Dòng cần thêm mới hoặc ghi đè; cột A là id */
+  upserts: unknown[][];
+  /** id các dòng cần xoá */
+  deletes: string[];
+}
+export interface SyncRowsBody {
+  tables?: SyncRowsTable[];
+}
+
+type SheetProps = { sheetId: number; title: string; gridProperties: { rowCount: number; columnCount: number } };
+
+async function loadSheetsMeta(cfg: SheetsConfig, api: string, token: string, force = false): Promise<SheetProps[]> {
+  const now = Date.now();
+  if (!force && cachedSheetsMeta && cachedSheetsMeta.spreadsheetId === cfg.spreadsheetId && now - cachedSheetsMeta.timestamp < 300000) {
+    return cachedSheetsMeta.sheets.map((s) => s.properties);
+  }
+  const res = await fetch(`${api}?fields=sheets.properties`, { headers: { Authorization: `Bearer ${token}` } });
+  const meta = (await res.json()) as { sheets?: Array<{ properties: SheetProps }> };
+  if (!res.ok) throw new Error(`Không đọc được danh sách sheet: ${JSON.stringify(meta).slice(0, 200)}`);
+  cachedSheetsMeta = { spreadsheetId: cfg.spreadsheetId, sheets: meta.sheets || [], timestamp: now };
+  return (meta.sheets || []).map((s) => s.properties);
+}
+
+const cellValue = (value: unknown) => ({
+  userEnteredValue: typeof value === 'number' && Number.isFinite(value) ? { numberValue: value } : { stringValue: String(value ?? '') },
+});
+
+/**
+ * Nhận các dòng thay đổi của từng sheet, tìm vị trí theo cột A (id) rồi trong MỘT lần ghi:
+ * ghi đè dòng đã có, xoá dòng bị xoá (và dòng trùng id), thêm dòng mới vào cuối.
+ * Mỗi lần chỉ tốn 1 lượt đọc cột A (+ danh sách sheet, có cache 5 phút) và 1 lượt ghi.
+ */
+async function handleSyncRows(body: SyncRowsBody, cfg: SheetsConfig, api: string): Promise<ApiResult> {
+  const tables = (body.tables || []).filter((t) => t && t.sheet && ((t.upserts || []).length > 0 || (t.deletes || []).length > 0));
+  if (tables.length === 0) return { status: 200, body: { success: true, updated: 0, appended: 0, deleted: 0, missing: [] } };
+
+  const token = await getAccessToken(cfg);
+  let metaSheets = await loadSheetsMeta(cfg, api, token);
+  if (tables.some((t) => !metaSheets.find((m) => m.title === t.sheet))) metaSheets = await loadSheetsMeta(cfg, api, token, true);
+  const missing = tables.filter((t) => !metaSheets.find((m) => m.title === t.sheet)).map((t) => t.sheet);
+  const work = tables.filter((t) => !missing.includes(t.sheet));
+  if (work.length === 0) return { status: 200, body: { success: true, updated: 0, appended: 0, deleted: 0, missing } };
+
+  // 1 lượt đọc: cột A của các sheet cần ghi
+  const q = work.map((t) => `ranges=${encodeURIComponent(`'${t.sheet}'!A:A`)}`).join('&');
+  const colRes = await fetch(`${api}/values:batchGet?${q}&majorDimension=COLUMNS`, { headers: { Authorization: `Bearer ${token}` } });
+  const colData = (await colRes.json()) as { valueRanges?: Array<{ values?: unknown[][] }> };
+  if (!colRes.ok) return { status: 500, body: { success: false, error: colData } };
+
+  const updateReqs: unknown[] = [];
+  const deleteReqs: Array<{ sheetId: number; rowIndex: number }> = [];
+  const appendReqs: unknown[] = [];
+  let updated = 0;
+  let appended = 0;
+  let deleted = 0;
+
+  work.forEach((t, i) => {
+    const props = metaSheets.find((m) => m.title === t.sheet)!;
+    const colA = (colData.valueRanges?.[i]?.values?.[0] || []) as unknown[];
+    // id → các chỉ số dòng (0-based), bỏ dòng tiêu đề (dòng 1)
+    const rowsById = new Map<string, number[]>();
+    colA.forEach((v, idx) => {
+      if (idx === 0) return;
+      const id = String(v ?? '').trim();
+      if (!id) return;
+      const list = rowsById.get(id);
+      if (list) list.push(idx);
+      else rowsById.set(id, [idx]);
+    });
+
+    const toDelete = new Set<number>();
+    const newRows: unknown[][] = [];
+    for (const row of t.upserts || []) {
+      const id = String(row[0] ?? '').trim();
+      if (!id) continue;
+      const found = rowsById.get(id);
+      if (found && found.length > 0) {
+        updateReqs.push({
+          updateCells: {
+            start: { sheetId: props.sheetId, rowIndex: found[0], columnIndex: 0 },
+            rows: [{ values: row.map(cellValue) }],
+            fields: 'userEnteredValue',
+          },
+        });
+        updated++;
+        found.slice(1).forEach((r) => toDelete.add(r)); // dòng trùng id → xoá bớt
+      } else {
+        newRows.push(row);
+      }
+    }
+    for (const rawId of t.deletes || []) {
+      const id = String(rawId ?? '').trim();
+      (rowsById.get(id) || []).forEach((r) => toDelete.add(r));
+    }
+    toDelete.forEach((r) => deleteReqs.push({ sheetId: props.sheetId, rowIndex: r }));
+    deleted += toDelete.size;
+    if (newRows.length > 0) {
+      appendReqs.push({
+        appendCells: { sheetId: props.sheetId, rows: newRows.map((r) => ({ values: r.map(cellValue) })), fields: 'userEnteredValue' },
+      });
+      appended += newRows.length;
+    }
+  });
+
+  // Thứ tự: ghi đè (vị trí còn đúng) → xoá từ dưới lên → thêm vào cuối
+  deleteReqs.sort((a, b) => (a.sheetId === b.sheetId ? b.rowIndex - a.rowIndex : a.sheetId - b.sheetId));
+  const requests = [
+    ...updateReqs,
+    ...deleteReqs.map((d) => ({
+      deleteDimension: { range: { sheetId: d.sheetId, dimension: 'ROWS', startIndex: d.rowIndex, endIndex: d.rowIndex + 1 } },
+    })),
+    ...appendReqs,
+  ];
+  if (requests.length > 0) {
+    const res = await fetch(`${api}:batchUpdate`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ requests }),
+    });
+    const out = await res.json();
+    if (!res.ok) return { status: 500, body: { success: false, error: out } };
+    // Số dòng của sheet đã đổi → làm mới cache danh sách sheet ở lần sau
+    if (deleteReqs.length > 0 || appendReqs.length > 0) cachedSheetsMeta = null;
+  }
+  return { status: 200, body: { success: true, updated, appended, deleted, missing, timestamp: new Date().toISOString() } };
 }

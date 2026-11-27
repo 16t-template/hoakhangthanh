@@ -103,7 +103,7 @@ export default function CongNoNCCPage() {
 
   // Pagination
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(100);
 
   // Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);

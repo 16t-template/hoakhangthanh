@@ -2,6 +2,8 @@ import { pauseModuleAudit } from '@/stores/moduleAuditStore';
 import { GOOGLE_SHEETS_CONFIG } from '@/config/googleSheetsConfig';
 import { getActiveSpreadsheetId, sheetsRequestHeaders, spreadsheetUrlOf } from '@/stores/appSettingsStore';
 import { fromSheetDate } from '@/lib/sheetDate';
+import { buildSheetTables } from '@/lib/sheetTables';
+import { commitDiff, diffTable, setLoadedIdsFromTable, setSnapshotFromTable, setSnapshotsFromPull, type TableDiff } from '@/lib/rowSync';
 import { useDailyStockReconcileStore, type DailyStockRecord } from '@/stores/dailyStockReconcileStore';
 import {
   useCashStore,
@@ -155,101 +157,152 @@ export function takeModulesToSeedAfterPull(): SyncableModule[] {
   return mods;
 }
 
+/** Gom dữ liệu các module cần ghi lên sheet (giống nhau cho ghi theo dòng / ghi cả bảng) */
+function collectSyncPayload(modules?: SyncableModule[]): Record<string, any> {
+  const shouldSync = (m: SyncableModule) => !modules || modules.length === 0 || modules.includes(m);
+
+  const payload: Record<string, any> = {};
+
+  if (shouldSync('orders')) {
+    payload.orders = useOrderStore.getState().orders;
+  }
+  if (shouldSync('flowers')) {
+    payload.flowers = useFlowerStore.getState().flowers;
+  }
+  if (shouldSync('distributors')) {
+    payload.distributors = useDistributorStore.getState().distributors;
+  }
+  if (shouldSync('suppliers')) {
+    payload.suppliers = useSupplierStore.getState().suppliers;
+  }
+  if (shouldSync('supplierOrders')) {
+    // LOẠI BỎ imageUrl (ảnh base64 nặng hàng megabyte) trước khi gửi lên API để tránh lỗi 413 Request Entity Too Large
+    const rawSupplierOrders = useSupplierOrderStore.getState().orders;
+    payload.supplierOrders = rawSupplierOrders.map((so) => {
+      if (!so.imageUrl) return so;
+      const { imageUrl: _, ...cleanOrder } = so;
+      return cleanOrder;
+    });
+  }
+  if (shouldSync('debtRecords')) {
+    payload.debtRecords = useDebtStore.getState().records;
+  }
+  if (shouldSync('transactions')) {
+    payload.transactions = useCashStore.getState().transactions;
+  }
+  if (shouldSync('inventory')) {
+    payload.inventory = useInventoryStore.getState().inventory;
+  }
+  if (shouldSync('employees')) {
+    payload.employees = useEmployeeStore.getState().employees;
+  }
+  if (shouldSync('dailyStock')) {
+    payload.dailyStock = useDailyStockReconcileStore.getState().records;
+  }
+  return payload;
+}
+
+/** Gửi JSON (nén gzip nếu trình duyệt hỗ trợ) tới API Google Sheets */
+async function postSheetsJson(url: string, data: unknown): Promise<SyncResult & { data?: any }> {
+  const json = JSON.stringify(data);
+  let body: BodyInit = json;
+  const extraHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (typeof CompressionStream !== 'undefined') {
+    try {
+      body = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+      extraHeaders['Content-Type'] = 'application/octet-stream';
+      extraHeaders['X-Body-Encoding'] = 'gzip';
+    } catch {
+      body = json;
+    }
+  }
+  const res = await fetch(url, { method: 'POST', headers: sheetsRequestHeaders(extraHeaders), body });
+  const text = await res.text();
+  let result: any = null;
+  try {
+    result = JSON.parse(text);
+  } catch {
+    return {
+      success: false,
+      error: res.status === 413
+        ? 'Dung lượng gửi lên quá lớn (Request Entity Too Large).'
+        : `Máy chủ phản hồi mã ${res.status} (${res.statusText}): ${text.slice(0, 100)}`,
+    };
+  }
+  if (!res.ok || !result.success) {
+    return {
+      success: false,
+      error: result.error
+        ? typeof result.error === 'string' ? result.error : JSON.stringify(result.error)
+        : 'Không thể đồng bộ lên Google Sheets',
+    };
+  }
+  return { success: true, data: result };
+}
+
 /**
  * Đẩy dữ liệu từ store trên Web lên Google Sheets (hỗ trợ đồng bộ mục tiêu từng module hoặc toàn bộ 11 sheets)
  */
 export async function syncAllToGoogleSheets(modules?: SyncableModule[]): Promise<SyncResult> {
   try {
-    const shouldSync = (m: SyncableModule) => !modules || modules.length === 0 || modules.includes(m);
+    const payload = collectSyncPayload(modules);
 
-    const payload: Record<string, any> = {};
-
-    if (shouldSync('orders')) {
-      payload.orders = useOrderStore.getState().orders;
-    }
-    if (shouldSync('flowers')) {
-      payload.flowers = useFlowerStore.getState().flowers;
-    }
-    if (shouldSync('distributors')) {
-      payload.distributors = useDistributorStore.getState().distributors;
-    }
-    if (shouldSync('suppliers')) {
-      payload.suppliers = useSupplierStore.getState().suppliers;
-    }
-    if (shouldSync('supplierOrders')) {
-      // LOẠI BỎ imageUrl (ảnh base64 nặng hàng megabyte) trước khi gửi lên API để tránh lỗi 413 Request Entity Too Large
-      const rawSupplierOrders = useSupplierOrderStore.getState().orders;
-      payload.supplierOrders = rawSupplierOrders.map((so) => {
-        if (!so.imageUrl) return so;
-        const { imageUrl: _, ...cleanOrder } = so;
-        return cleanOrder;
-      });
-    }
-    if (shouldSync('debtRecords')) {
-      payload.debtRecords = useDebtStore.getState().records;
-    }
-    if (shouldSync('transactions')) {
-      payload.transactions = useCashStore.getState().transactions;
-    }
-    if (shouldSync('inventory')) {
-      payload.inventory = useInventoryStore.getState().inventory;
-    }
-    if (shouldSync('employees')) {
-      payload.employees = useEmployeeStore.getState().employees;
-    }
-    if (shouldSync('dailyStock')) {
-      payload.dailyStock = useDailyStockReconcileStore.getState().records;
-    }
-
-    // Nén gzip trước khi gửi: toàn bộ đơn + chi tiết ~10 MB → ~1 MB (tránh lỗi 413 quá dung lượng)
-    const json = JSON.stringify(payload);
-    let body: BodyInit = json;
-    const extraHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (typeof CompressionStream !== 'undefined') {
-      try {
-        body = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
-        extraHeaders['Content-Type'] = 'application/octet-stream';
-        extraHeaders['X-Body-Encoding'] = 'gzip';
-      } catch {
-        body = json;
+    // 1) GHI THEO DÒNG: so với ảnh chụp sheet, chỉ gửi dòng mới / đổi / xoá (vài KB)
+    const fullPayload: Record<string, any> = {};
+    const rowTables: TableDiff[] = [];
+    const tablesByKey: Record<string, ReturnType<typeof buildSheetTables>> = {};
+    for (const key of Object.keys(payload)) {
+      const tables = buildSheetTables({ [key]: payload[key] });
+      tablesByKey[key] = tables;
+      const diffs = tables.map((t) => diffTable(t));
+      if (diffs.some((d) => d === null)) {
+        fullPayload[key] = payload[key]; // chưa có ảnh chụp / id trùng → ghi cả bảng như cũ
+      } else {
+        rowTables.push(...(diffs as TableDiff[]));
       }
     }
 
-    const res = await fetch('/api/google-sheets/sync-all', {
-      method: 'POST',
-      headers: sheetsRequestHeaders(extraHeaders),
-      body,
-    });
-
-    const text = await res.text();
-    let result: any = null;
-    try {
-      result = JSON.parse(text);
-    } catch {
-      return {
-        success: false,
-        error: res.status === 413
-          ? 'Dung lượng gửi lên quá lớn (Request Entity Too Large). Hệ thống đã tự động lọc bớt ảnh nặng.'
-          : `Máy chủ phản hồi mã ${res.status} (${res.statusText}): ${text.slice(0, 100)}`,
-      };
+    let changedRows = 0;
+    let touchedSheets = 0;
+    const work = rowTables.filter((d) => d.upserts.length > 0 || d.deletes.length > 0);
+    if (work.length > 0) {
+      const result = await postSheetsJson('/api/google-sheets/sync-rows', {
+        tables: work.map((d) => ({ sheet: d.sheet, upserts: d.upserts, deletes: d.deletes })),
+      });
+      if (!result.success) return result;
+      const missing: string[] = result.data?.missing || [];
+      for (const d of work) {
+        if (missing.includes(d.sheet)) continue;
+        commitDiff(d);
+        changedRows += d.upserts.length + d.deletes.length;
+        touchedSheets++;
+      }
+      // Sheet chưa có trên spreadsheet → để cách ghi cả bảng tự tạo sheet
+      if (missing.length > 0) {
+        for (const [key, tables] of Object.entries(tablesByKey)) {
+          if (tables.some((t) => missing.includes(t.range.split('!')[0]))) fullPayload[key] = payload[key];
+        }
+      }
     }
+    // Bảng không đổi gì vẫn coi là đã khớp
+    rowTables.filter((d) => d.upserts.length === 0 && d.deletes.length === 0).forEach(commitDiff);
 
-    if (!res.ok || !result.success) {
-      return {
-        success: false,
-        error: result.error
-          ? typeof result.error === 'string'
-            ? result.error
-            : JSON.stringify(result.error)
-          : 'Không thể đồng bộ lên Google Sheets',
-      };
+    // 2) GHI CẢ BẢNG (cách cũ) cho các module chưa ghi theo dòng được
+    if (Object.keys(fullPayload).length > 0) {
+      const result = await postSheetsJson('/api/google-sheets/sync-all', fullPayload);
+      if (!result.success) return result;
+      for (const key of Object.keys(fullPayload)) {
+        (tablesByKey[key] || buildSheetTables({ [key]: fullPayload[key] })).forEach(setSnapshotFromTable);
+      }
+      touchedSheets += result.data?.updatedSheetsCount || 0;
+      changedRows += result.data?.totalUpdatedCells || 0;
     }
 
     return {
       success: true,
-      totalUpdatedCells: result.totalUpdatedCells,
-      updatedSheetsCount: result.updatedSheetsCount,
-      timestamp: result.timestamp,
+      totalUpdatedCells: changedRows,
+      updatedSheetsCount: touchedSheets,
+      timestamp: new Date().toISOString(),
     };
   } catch (err: any) {
     return {
@@ -281,6 +334,8 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
       const title = (vr.range || '').split('!')[0].replace(/'/g, '');
       sheetMap[title] = (vr.values || []).filter((r) => r.some((c) => c !== '' && c !== undefined));
     }
+    // Ảnh chụp nội dung sheet: lần ghi sau chỉ gửi các dòng khác với ảnh chụp này
+    setSnapshotsFromPull(sheetMap);
 
     const counts: Record<string, number> = {};
 
@@ -889,7 +944,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           paymentStatus = (String(r[10] || prev?.paymentStatus || 'unpaid').trim()) as Order['paymentStatus'];
           creator = String(r[11] || '').trim() || prev?.creator || '';
           totalQuantity = parseSheetNumber(r[12]) || prev?.totalQuantity || 0;
-          notes = String(r[13] || '').trim() || prev?.notes || '';
+          notes = String(r[13] || '').trim();
         } else if (isStandard17Cols) {
           itemsSubtotal = parseSheetNumber(r[3]) || 0;
           shippingFee = parseSheetNumber(r[4]) || 0;
@@ -903,7 +958,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           paymentStatus = (String(r[12] || prev?.paymentStatus || 'unpaid').trim()) as Order['paymentStatus'];
           creator = String(r[13] || '').trim() || prev?.creator || '';
           totalQuantity = parseSheetNumber(r[14]) || prev?.totalQuantity || 0;
-          notes = String(r[15] || '').trim() || prev?.notes || '';
+          notes = String(r[15] || '').trim();
         } else if (hasPhoneAddress) {
           totalQuantity = parseSheetNumber(r[5]) || prev?.totalQuantity || 0;
           itemsSubtotal = parseSheetNumber(r[6]) || 0;
@@ -917,7 +972,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           status = (String(r[14] || prev?.status || 'da_xac_nhan').trim()) as Order['status'];
           paymentStatus = (String(r[15] || prev?.paymentStatus || 'unpaid').trim()) as Order['paymentStatus'];
           creator = String(r[16] || '').trim() || prev?.creator || '';
-          notes = String(r[17] || '').trim() || prev?.notes || '';
+          notes = String(r[17] || '').trim();
         } else {
           // Layout ngắn (7 cột): id, ngay, khach, thanh_tien, cuoc_xe, tru_hang, tong_tien
           // Lấy đúng số trên sheet (ô trống = 0), không lấy lại số cũ trong trình duyệt
@@ -928,7 +983,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           status = prev?.status || 'da_xac_nhan';
           paymentStatus = prev?.paymentStatus || 'unpaid';
           creator = prev?.creator || '';
-          notes = String(r[7] || prev?.notes || '').trim();
+          notes = String(r[7] || '').trim(); // sheet là chuẩn: không lấy lại ghi chú cũ trên web
         }
 
         // Bỏ "Đã thanh toán" khỏi hệ thống: khách trả tiền ghi bằng phiếu thu ở module Công nợ.
@@ -994,7 +1049,7 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
           status: (String(r[9] || prev?.status || 'nhap').trim()) as SupplierOrder['status'],
           paymentStatus: 'unpaid' as SupplierOrder['paymentStatus'],
           creator: String(r[10] || '').trim() || prev?.creator || '',
-          notes: String(r[11] || '').trim() || prev?.notes || '',
+          notes: String(r[11] || '').trim(),
           items: prev?.items || [],
         };
       });
@@ -1008,6 +1063,10 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
     // Tự động tính toán lại toàn bộ doanh số bán hoa, công nợ cũ, đã trả, nợ cuối cho NPP & NCC
     recalcAllDistributorsDebts();
     recalcAllSuppliersDebts();
+
+    // Ghi nhận các dòng web đã đọc được: chỉ những dòng này mới có thể bị xoá trên sheet khi ghi theo dòng
+    const loadedPayload = collectSyncPayload();
+    for (const key of Object.keys(loadedPayload)) buildSheetTables({ [key]: loadedPayload[key] }).forEach(setLoadedIdsFromTable);
 
     const parts = [
       counts['hoa'] ? `${counts['hoa']} loại hoa` : '',

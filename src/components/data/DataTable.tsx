@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowDown, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pin, Sigma } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Pin, Sigma } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MAX_COLUMN_WIDTH, type ColumnDef, type SortDirection, type SortState } from '@/stores/createListStore';
-import { Button } from '@/components/ui/Button';
-import { Tooltip } from '@/components/ui/Tooltip';
 import { EmptyState, Spinner } from '@/components/ui/Feedback';
 import { parseDateTimestamp } from '@/lib/format';
 
-export const PAGE_SIZES = [10, 20, 30, 50, 100];
+export const PAGE_SIZES = [20, 50, 100, 200, 500];
 export const PAGE_SIZE_ACCENTS = ['border-l-emerald-400', 'border-l-sky-400', 'border-l-violet-400', 'border-l-amber-400', 'border-l-rose-400', 'border-l-fuchsia-400'];
 const CHECK_COL = 44;
 const ACTION_COL = 80;
@@ -30,92 +28,175 @@ export function PageSizeSelect({
   value,
   onChange,
   totalRecords,
-  perPageLabel = '/ trang',
-  allLabel = 'Tất cả',
-  compact = false,
   className,
 }: {
   value: number;
   onChange: (v: number) => void;
-  totalRecords: number;
+  totalRecords?: number;
   perPageLabel?: string;
   allLabel?: string;
   compact?: boolean;
   className?: string;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const withAll = totalRecords > 100 && !PAGE_SIZES.includes(totalRecords);
-  const options = withAll ? [...PAGE_SIZES, totalRecords] : PAGE_SIZES;
-  const display = value === totalRecords && withAll ? allLabel : String(value);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, []);
+  const options = totalRecords && totalRecords > 500 && !PAGE_SIZES.includes(totalRecords)
+    ? [...PAGE_SIZES, totalRecords]
+    : PAGE_SIZES;
 
   return (
-    <div className={cn('inline-flex items-center gap-1', className)} ref={ref}>
-      <div className="relative">
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={open}
-          aria-label="Số bản ghi mỗi trang"
-          onClick={() => setOpen((o) => !o)}
-          className={cn(
-            'inline-flex items-center gap-0.5 tabular-nums font-medium transition-all',
-            'border border-border rounded bg-card text-foreground',
-            'hover:bg-muted/60 hover:border-primary/30',
-            'focus:outline-none focus:ring-1 focus:ring-primary/20',
-            open && 'border-primary/40 ring-1 ring-primary/20 bg-muted/60',
-            compact ? 'h-6 pl-1.5 pr-4 text-xs' : 'h-6 pl-2 pr-5 text-xs',
-          )}
-        >
-          {display}
-          <ChevronDown
-            size={11}
-            strokeWidth={2.5}
-            className={cn('absolute text-muted-foreground transition-transform duration-150', compact ? 'right-1' : 'right-1.5', open && 'rotate-180')}
-          />
-        </button>
-        {open && (
-          <div
-            role="listbox"
-            className="absolute left-0 bottom-full z-50 mb-1 min-w-[5rem] rounded-md border border-border bg-card shadow-lg overflow-hidden"
-            style={{ boxShadow: '0 -4px 20px rgba(0,0,0,0.10)' }}
-          >
-            {options.map((opt, i) => {
-              const selected = value === opt;
-              return (
-                <button
-                  key={opt}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  onClick={() => {
-                    onChange(opt);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-3 tabular-nums transition-colors',
-                    'border-l-[3px] px-2.5 py-1.5 text-xs',
-                    PAGE_SIZE_ACCENTS[i % PAGE_SIZE_ACCENTS.length],
-                    selected ? 'bg-primary/8 text-foreground font-bold' : 'bg-card text-foreground/80 font-medium hover:bg-muted/50',
-                  )}
-                >
-                  <span>{withAll && opt === totalRecords ? allLabel : String(opt)}</span>
-                  {selected && <Check size={10} strokeWidth={3} className="shrink-0 text-primary" />}
-                </button>
-              );
-            })}
-          </div>
+    <div className={cn('relative inline-flex items-center', className)}>
+      <select
+        value={value}
+        aria-label="Cỡ trang"
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="h-7 pl-2.5 pr-6 text-xs font-medium rounded-md border border-border/80 bg-card text-foreground cursor-pointer hover:bg-muted/50 focus:outline-none focus:ring-1 focus:ring-primary/40 appearance-none shadow-2xs"
+      >
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {totalRecords && opt === totalRecords && totalRecords > 500 ? `Tất cả (${totalRecords} dòng)` : `${opt} dòng`}
+          </option>
+        ))}
+      </select>
+      <ChevronDown size={12} className="pointer-events-none absolute right-2 text-muted-foreground stroke-[2.5px]" />
+    </div>
+  );
+}
+
+export function getPaginationPages(currentPage: number, totalPages: number): (number | '...')[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, '...', totalPages];
+  }
+  if (currentPage >= totalPages - 3) {
+    return [1, '...', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages];
+}
+
+export function TablePagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+  selectedCount = 0,
+  className,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (p: number) => void;
+  onPageSizeChange: (s: number) => void;
+  selectedCount?: number;
+  className?: string;
+}) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const pages = useMemo(() => getPaginationPages(page, pageCount), [page, pageCount]);
+  const from = Math.min((page - 1) * pageSize + 1, total);
+  const to = Math.min(page * pageSize, total);
+
+  if (total <= 0) return null;
+
+  return (
+    <div className={cn("border-t border-border bg-card md:bg-muted/5 px-3 sm:px-4 py-2 flex flex-wrap items-center justify-between gap-2 shrink-0 select-none", className)}>
+      {/* Bên trái: Thông tin hiển thị dòng & Cỡ trang */}
+      <div className="flex items-center flex-wrap gap-2 sm:gap-3 text-xs text-muted-foreground min-w-0">
+        <div className="flex items-center gap-1.5 tabular-nums">
+          <span className="text-primary font-bold text-sm leading-none">•</span>
+          <span>Hiển thị</span>
+          <span className="font-semibold text-foreground">{from} - {to}</span>
+          <span className="text-muted-foreground/60">/</span>
+          <span className="font-semibold text-foreground">{total}</span>
+          <span>dòng</span>
+        </div>
+
+        {selectedCount > 0 && (
+          <>
+            <span className="text-primary font-medium hidden sm:inline">· {selectedCount} đã chọn</span>
+            <span className="sm:hidden inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-primary/15 text-primary text-xs font-bold tabular-nums">
+              {selectedCount}✓
+            </span>
+          </>
         )}
+
+        <div className="h-4 w-[1px] bg-border mx-1 hidden sm:block" />
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-muted-foreground whitespace-nowrap">Cỡ trang:</span>
+          <PageSizeSelect value={pageSize} onChange={onPageSizeChange} totalRecords={total} />
+        </div>
       </div>
-      {perPageLabel && <span className="text-muted-foreground/60 text-xs whitespace-nowrap">{perPageLabel}</span>}
+
+      {/* Bên phải: Phân trang dạng button group như ảnh 3 */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-muted-foreground hidden sm:inline">Trang</span>
+        <div className="inline-flex items-center rounded-lg border border-border/80 bg-card overflow-hidden shadow-2xs divide-x divide-border/60">
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => onPageChange(1)}
+            className="h-7 px-2 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Trang đầu"
+          >
+            <ChevronsLeft size={13} />
+          </button>
+          <button
+            type="button"
+            disabled={page <= 1}
+            onClick={() => onPageChange(page - 1)}
+            className="h-7 px-2 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Trang trước"
+          >
+            <ChevronLeft size={13} />
+          </button>
+
+          {pages.map((p, idx) => {
+            if (p === '...') {
+              return (
+                <span key={`dots-${idx}`} className="h-7 px-2 flex items-center justify-center text-xs text-muted-foreground/60 select-none">
+                  ...
+                </span>
+              );
+            }
+            const isCurrent = p === page;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => onPageChange(p as number)}
+                className={cn(
+                  'h-7 min-w-[28px] px-2.5 flex items-center justify-center text-xs transition-colors',
+                  isCurrent
+                    ? 'font-bold text-primary bg-primary/10 select-none'
+                    : 'font-medium text-foreground/80 hover:text-foreground hover:bg-muted/50'
+                )}
+              >
+                {p}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            disabled={page >= pageCount}
+            onClick={() => onPageChange(page + 1)}
+            className="h-7 px-2 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Trang sau"
+          >
+            <ChevronRight size={13} />
+          </button>
+          <button
+            type="button"
+            disabled={page >= pageCount}
+            onClick={() => onPageChange(pageCount)}
+            className="h-7 px-2 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            title="Trang cuối"
+          >
+            <ChevronsRight size={13} />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -327,7 +408,6 @@ export function DataTable<T>({
   }, [data, activeSort]);
 
   const total = sortedData.length;
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const pageRows = useMemo(() => {
     if (sortedData.length <= pageSize && page === 1) {
       return sortedData;
@@ -357,14 +437,6 @@ export function DataTable<T>({
     };
   }, [updateShadows, isLoading]);
 
-  const [editingPage, setEditingPage] = useState(false);
-  const [pageInput, setPageInput] = useState('');
-  const pageInputRef = useRef<HTMLInputElement>(null);
-  const commitPage = useCallback(() => {
-    const n = parseInt(pageInput);
-    if (n >= 1 && n <= pageCount) onPageChange(n);
-    setEditingPage(false);
-  }, [pageInput, pageCount, onPageChange]);
 
   const cycleSort = useCallback(
     (id: string) => {
@@ -485,8 +557,6 @@ export function DataTable<T>({
       </div>
     );
   }
-
-  const pagerBtn = 'h-6 w-6 p-0 border-border rounded hover:bg-primary hover:text-white hover:border-primary transition-all';
 
   return (
     <div className="flex flex-col h-full bg-card overflow-hidden">
@@ -735,81 +805,14 @@ export function DataTable<T>({
         )}
       </div>
 
-      {total > 0 && (
-        <div className="border-t border-border bg-card md:bg-muted/10 px-3 sm:px-4 py-1.5 flex items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
-            <span className="tabular-nums">
-              <span className="font-medium text-foreground">
-                {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)}
-              </span>
-              <span className="text-muted-foreground/60">/Tổng:</span>
-              <span className="font-semibold text-foreground">{total}</span>
-            </span>
-            {selectedIds.size > 0 && (
-              <>
-                <span className="text-primary font-medium hidden sm:inline">· {selectedIds.size} đã chọn</span>
-                <span className="sm:hidden inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-primary/15 text-primary text-xs font-bold tabular-nums">
-                  {selectedIds.size}✓
-                </span>
-              </>
-            )}
-            <div className="flex items-center border-l border-border pl-2">
-              <PageSizeSelect value={pageSize} onChange={onPageSizeChange} totalRecords={total} className="hidden sm:inline-flex" />
-              <PageSizeSelect value={pageSize} onChange={onPageSizeChange} totalRecords={total} perPageLabel="" compact className="sm:hidden" />
-            </div>
-          </div>
-          <div className="flex items-center gap-0.5">
-            <Tooltip content="Trang đầu" placement="top">
-              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => onPageChange(1)} className={pagerBtn}>
-                <ChevronsLeft size={13} />
-              </Button>
-            </Tooltip>
-            <Tooltip content="Trang trước" placement="top">
-              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => onPageChange(page - 1)} className={pagerBtn}>
-                <ChevronLeft size={13} />
-              </Button>
-            </Tooltip>
-            <Tooltip content="Nhấn đúp để nhập trang" placement="top">
-              <div className="flex items-center gap-0.5 px-1">
-                {editingPage ? (
-                  <input
-                    ref={pageInputRef}
-                    value={pageInput}
-                    onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))}
-                    onBlur={commitPage}
-                    onKeyDown={(e) => e.key === 'Enter' && commitPage()}
-                    className="h-6 w-10 text-center text-xs font-bold border border-primary rounded bg-background text-foreground outline-none tabular-nums"
-                    autoFocus
-                  />
-                ) : (
-                  <span
-                    onDoubleClick={() => {
-                      setEditingPage(true);
-                      setPageInput(String(page));
-                      setTimeout(() => pageInputRef.current?.select(), 50);
-                    }}
-                    className="h-6 min-w-[24px] flex items-center justify-center rounded bg-primary text-white text-xs font-bold px-1 tabular-nums cursor-default"
-                  >
-                    {page}
-                  </span>
-                )}
-                <span className="text-muted-foreground/40 text-xs">/</span>
-                <span className="text-xs font-medium text-muted-foreground tabular-nums">{pageCount || 1}</span>
-              </div>
-            </Tooltip>
-            <Tooltip content="Trang sau" placement="top">
-              <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => onPageChange(page + 1)} className={pagerBtn}>
-                <ChevronRight size={13} />
-              </Button>
-            </Tooltip>
-            <Tooltip content="Trang cuối" placement="top">
-              <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => onPageChange(pageCount)} className={pagerBtn}>
-                <ChevronsRight size={13} />
-              </Button>
-            </Tooltip>
-          </div>
-        </div>
-      )}
+      <TablePagination
+        page={page}
+        pageSize={pageSize}
+        total={total}
+        onPageChange={onPageChange}
+        onPageSizeChange={onPageSizeChange}
+        selectedCount={selectedIds.size}
+      />
     </div>
   );
 }

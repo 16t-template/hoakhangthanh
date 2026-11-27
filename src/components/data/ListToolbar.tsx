@@ -130,52 +130,54 @@ export function ListToolbar({
               {bulkActions}
             </motion.div>
           ) : (
-            <motion.div key="mobile-normal" initial={{ opacity: 0, x: -15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} className="flex items-center gap-1.5">
-              {showBack && (
-                <button onClick={back} className={`${mobileIconBtn} border border-border bg-muted/30 text-muted-foreground active:scale-95 transition-all`}>
-                  <ArrowLeft size={15} className="stroke-[2.5px]" />
-                </button>
-              )}
-              {hideSearch ? (
-                <div className="flex-1 min-w-0" />
-              ) : (
-                <div className="relative flex-1 min-w-0">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <input
-                    value={searchTerm}
-                    onChange={(e) => onSearchChange(e.target.value)}
-                    placeholder={placeholder}
-                    className="w-full h-8 pl-8 pr-7 bg-muted/40 border border-border/60 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
-                  />
-                  {searchTerm && (
-                    <button onClick={() => onSearchChange('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground p-0.5 rounded-full">
-                      <X size={12} />
-                    </button>
-                  )}
-                </div>
-              )}
-              {searchTrailing}
-              {hasFilterGroups && (
-                <button
-                  onClick={() => setFilterSheetOpen(true)}
-                  className={cn(
-                    `${mobileIconBtn} border transition-all active:scale-95 relative`,
-                    activeFilterCount > 0 ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background border-border text-muted-foreground',
-                  )}
-                >
-                  <Funnel size={15} />
-                  {activeFilterCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-primary text-white text-xs font-bold rounded-full tabular-nums">
-                      {activeFilterCount}
-                    </span>
-                  )}
-                </button>
-              )}
-              {onAdd && (
-                <button onClick={onAdd} className={`${mobileIconBtn} bg-primary text-white shadow-sm active:scale-95 transition-all`}>
-                  <Plus size={16} className="stroke-[2.5px]" />
-                </button>
-              )}
+            <motion.div key="mobile-normal" initial={{ opacity: 0, x: -15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                {showBack && (
+                  <button onClick={back} className={`${mobileIconBtn} border border-border bg-muted/30 text-muted-foreground active:scale-95 transition-all`}>
+                    <ArrowLeft size={15} className="stroke-[2.5px]" />
+                  </button>
+                )}
+                {hideSearch ? (
+                  <div className="flex-1 min-w-0" />
+                ) : (
+                  <div className="relative flex-1 min-w-0">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <input
+                      value={searchTerm}
+                      onChange={(e) => onSearchChange(e.target.value)}
+                      placeholder={placeholder}
+                      className="w-full h-8 pl-8 pr-7 bg-muted/40 border border-border/60 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary/40 transition-all"
+                    />
+                    {searchTerm && (
+                      <button onClick={() => onSearchChange('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground p-0.5 rounded-full">
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {hasFilterGroups && (
+                  <button
+                    onClick={() => setFilterSheetOpen(true)}
+                    className={cn(
+                      `${mobileIconBtn} border transition-all active:scale-95 relative`,
+                      activeFilterCount > 0 ? 'bg-primary/5 border-primary/40 text-primary' : 'bg-background border-border text-muted-foreground',
+                    )}
+                  >
+                    <Funnel size={15} />
+                    {activeFilterCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 flex items-center justify-center bg-primary text-white text-xs font-bold rounded-full tabular-nums">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+                {onAdd && (
+                  <button onClick={onAdd} className={`${mobileIconBtn} bg-primary text-white shadow-sm active:scale-95 transition-all`}>
+                    <Plus size={16} className="stroke-[2.5px]" />
+                  </button>
+                )}
+              </div>
+              {searchTrailing && <div className="overflow-x-auto pb-0.5">{searchTrailing}</div>}
             </motion.div>
           )}
         </AnimatePresence>
@@ -223,9 +225,9 @@ export function ListToolbar({
                 </button>
               )}
               {hideSearch ? (
-                <div className="flex-1 max-w-md min-w-0" />
+                <div className="flex-1 max-w-xs md:max-w-sm min-w-0" />
               ) : (
-                <div className="relative flex-1 max-w-md min-w-0 group">
+                <div className="relative flex-1 max-w-xs md:max-w-sm min-w-0 group">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                   <input
                     ref={searchRef}

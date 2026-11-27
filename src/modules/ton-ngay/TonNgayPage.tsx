@@ -3,10 +3,6 @@ import dayjs from 'dayjs';
 import {
   Calendar,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   ClipboardCheck,
   Download,
   Info,
@@ -21,8 +17,7 @@ import {
 import * as XLSX from 'xlsx';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
-import { Tooltip } from '@/components/ui/Tooltip';
-import { PageSizeSelect } from '@/components/data/DataTable';
+import { TablePagination } from '@/components/data/DataTable';
 import { useFlowerStore, useOrderStore, useSupplierOrderStore } from '@/stores/hoaKhangThanhStore';
 import {
   useDailyStockReconcileStore,
@@ -35,8 +30,6 @@ import { todayISODate } from '@/lib/format';
 // Dùng chung 1 bộ định dạng số (toLocaleString tạo Intl mới mỗi lần gọi -> rất chậm khi có hàng nghìn ô)
 const viNumberFormat = new Intl.NumberFormat('vi-VN');
 const fmt = (n: number) => viNumberFormat.format(n || 0);
-
-const pagerBtn = 'h-6 w-6 p-0 border-border rounded hover:bg-primary hover:text-white hover:border-primary transition-all cursor-pointer';
 
 const WEEKDAYS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const weekdayOf = (ymd: string) => WEEKDAYS[dayjs(ymd).day()] ?? '';
@@ -611,9 +604,9 @@ export default function TonNgayPage() {
   const [pageSize, setPageSize] = useState(() => {
     try {
       const saved = localStorage.getItem('ton_ngay_page_size');
-      return saved ? Number(saved) || 20 : 20;
+      return saved ? Number(saved) || 100 : 100;
     } catch {
-      return 20;
+      return 100;
     }
   });
 
@@ -625,9 +618,6 @@ export default function TonNgayPage() {
     } catch {}
   };
 
-  const [editingPage, setEditingPage] = useState(false);
-  const [pageInput, setPageInput] = useState('');
-  const pageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setPage(1);
@@ -644,12 +634,6 @@ export default function TonNgayPage() {
       setPage(pageCount);
     }
   }, [page, pageCount]);
-
-  const commitPage = useCallback(() => {
-    const n = parseInt(pageInput);
-    if (n >= 1 && n <= pageCount) setPage(n);
-    setEditingPage(false);
-  }, [pageInput, pageCount]);
 
   interface PagedDateGroup {
     dateYMD: string;
@@ -1018,73 +1002,13 @@ export default function TonNgayPage() {
         </div>
 
         {/* Thanh phân trang đồng bộ với các module khác */}
-        {totalRows > 0 && (
-          <div className="border-t border-border bg-card md:bg-muted/10 px-3 sm:px-4 py-1.5 flex items-center justify-between gap-2 shrink-0 select-none">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground min-w-0">
-              <span className="tabular-nums">
-                <span className="font-medium text-foreground">
-                  {Math.min((page - 1) * pageSize + 1, totalRows)}–{Math.min(page * pageSize, totalRows)}
-                </span>
-                <span className="text-muted-foreground/60">/Tổng:</span>
-                <span className="font-semibold text-foreground">{totalRows}</span>
-              </span>
-              <div className="flex items-center border-l border-border pl-2">
-                <PageSizeSelect value={pageSize} onChange={handlePageSizeChange} totalRecords={totalRows} className="hidden sm:inline-flex" />
-                <PageSizeSelect value={pageSize} onChange={handlePageSizeChange} totalRecords={totalRows} perPageLabel="" compact className="sm:hidden" />
-              </div>
-            </div>
-            <div className="flex items-center gap-0.5">
-              <Tooltip content="Trang đầu" placement="top">
-                <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(1)} className={pagerBtn}>
-                  <ChevronsLeft size={13} />
-                </Button>
-              </Tooltip>
-              <Tooltip content="Trang trước" placement="top">
-                <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)} className={pagerBtn}>
-                  <ChevronLeft size={13} />
-                </Button>
-              </Tooltip>
-              <Tooltip content="Nhấn đúp để nhập trang" placement="top">
-                <div className="flex items-center gap-0.5 px-1">
-                  {editingPage ? (
-                    <input
-                      ref={pageInputRef}
-                      value={pageInput}
-                      onChange={(e) => setPageInput(e.target.value.replace(/\D/g, ''))}
-                      onBlur={commitPage}
-                      onKeyDown={(e) => e.key === 'Enter' && commitPage()}
-                      className="h-6 w-10 text-center text-xs font-bold border border-primary rounded bg-background text-foreground outline-none tabular-nums"
-                      autoFocus
-                    />
-                  ) : (
-                    <span
-                      onDoubleClick={() => {
-                        setEditingPage(true);
-                        setPageInput(String(page));
-                        setTimeout(() => pageInputRef.current?.select(), 50);
-                      }}
-                      className="h-6 min-w-[24px] flex items-center justify-center rounded bg-primary text-white text-xs font-bold px-1 tabular-nums cursor-default"
-                    >
-                      {page}
-                    </span>
-                  )}
-                  <span className="text-muted-foreground/40 text-xs">/</span>
-                  <span className="text-xs font-medium text-muted-foreground tabular-nums">{pageCount || 1}</span>
-                </div>
-              </Tooltip>
-              <Tooltip content="Trang sau" placement="top">
-                <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)} className={pagerBtn}>
-                  <ChevronRight size={13} />
-                </Button>
-              </Tooltip>
-              <Tooltip content="Trang cuối" placement="top">
-                <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(pageCount)} className={pagerBtn}>
-                  <ChevronsRight size={13} />
-                </Button>
-              </Tooltip>
-            </div>
-          </div>
-        )}
+        <TablePagination
+          page={page}
+          pageSize={pageSize}
+          total={totalRows}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
       </div>
 
       {/* Modal sửa Tồn đầu */}

@@ -70,7 +70,7 @@ export default function TonKhoPage() {
 
   // Pagination
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(100);
 
   // Drawer Nhập / Xuất kho
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);

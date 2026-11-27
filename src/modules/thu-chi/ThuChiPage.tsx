@@ -68,7 +68,7 @@ export default function ThuChiPage() {
 
   // Pagination
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(100);
 
   // Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -120,6 +120,44 @@ export default function ThuChiPage() {
     });
   }, [transactions, searchTerm, selectedTypes, selectedMethods]);
 
+  const summary = useMemo(() => {
+    let totalIncome = 0;
+    let totalExpense = 0;
+    let incomeCount = 0;
+    let expenseCount = 0;
+    let nccExpense = 0;
+    let nccExpenseCount = 0;
+
+    filteredData.forEach((t) => {
+      if (t.type === 'income') {
+        totalIncome += t.amount || 0;
+        incomeCount++;
+      } else if (t.type === 'expense') {
+        totalExpense += t.amount || 0;
+        expenseCount++;
+        const isNcc =
+          (t.category || '').toLowerCase().includes('ncc') ||
+          (t.category || '').toLowerCase().includes('nhà vườn') ||
+          (t.category || '').toLowerCase().includes('nha vuon') ||
+          (t.notes || '').toLowerCase().includes('ncc') ||
+          (t.partner || '').toLowerCase().includes('ncc');
+        if (isNcc) {
+          nccExpense += t.amount || 0;
+          nccExpenseCount++;
+        }
+      }
+    });
+
+    return {
+      totalIncome,
+      totalExpense,
+      balance: totalIncome - totalExpense,
+      incomeCount,
+      expenseCount,
+      nccExpense,
+      nccExpenseCount,
+    };
+  }, [filteredData]);
   
   const handleToggleSelection = (id: string) => {
     setSelectedIds((prev) => {
@@ -366,6 +404,65 @@ export default function ThuChiPage() {
 
       {activeTab === 'lichsu' ? (<ModuleHistory module="thu-chi" />) : activeTab === 'danhsach' ? (
         <div className="flex-1 min-h-0 flex flex-col">
+          {/* Hàng thẻ thống kê: Tổng chi, Tổng thu, Tồn quỹ, Trả NCC */}
+          <div className="mx-3 sm:mx-4 mt-2 mb-1 grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {/* Tổng chi - đặt đầu tiên theo yêu cầu */}
+            <div className="p-3 rounded-xl border border-rose-500/25 bg-rose-500/5 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400">Tổng chi</span>
+                <div className="text-lg sm:text-xl font-bold font-mono text-rose-600 mt-0.5">
+                  {formatNumber(summary.totalExpense)} đ
+                </div>
+                <div className="text-[11px] text-muted-foreground">{summary.expenseCount} phiếu chi</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600">
+                <ArrowUpRight size={20} className="stroke-[2.5px]" />
+              </div>
+            </div>
+
+            {/* Tổng thu */}
+            <div className="p-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Tổng thu</span>
+                <div className="text-lg sm:text-xl font-bold font-mono text-emerald-600 mt-0.5">
+                  {formatNumber(summary.totalIncome)} đ
+                </div>
+                <div className="text-[11px] text-muted-foreground">{summary.incomeCount} phiếu thu</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-600">
+                <ArrowDownLeft size={20} className="stroke-[2.5px]" />
+              </div>
+            </div>
+
+            {/* Tồn quỹ (Thu - Chi) */}
+            <div className="p-3 rounded-xl border border-border bg-card shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-muted-foreground">Tồn quỹ (Thu − Chi)</span>
+                <div className={`text-lg sm:text-xl font-bold font-mono mt-0.5 ${summary.balance < 0 ? 'text-rose-600' : 'text-foreground'}`}>
+                  {formatNumber(summary.balance)} đ
+                </div>
+                <div className="text-[11px] text-muted-foreground">Chênh lệch thu ròng</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-primary/10 text-primary">
+                <Wallet size={20} />
+              </div>
+            </div>
+
+            {/* Chi trả NCC */}
+            <div className="p-3 rounded-xl border border-amber-500/25 bg-amber-500/5 shadow-2xs flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">Chi trả NCC</span>
+                <div className="text-lg sm:text-xl font-bold font-mono text-amber-700 dark:text-amber-400 mt-0.5">
+                  {formatNumber(summary.nccExpense)} đ
+                </div>
+                <div className="text-[11px] text-muted-foreground">{summary.nccExpenseCount} phiếu trả NCC</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600">
+                <CreditCard size={20} />
+              </div>
+            </div>
+          </div>
+
           {/* Thanh Nút Chi Phí Cố Định (Bấm 1-click thêm ngay) */}
           <div className="mx-3 sm:mx-4 mt-2 mb-1 p-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex items-center gap-2 flex-wrap">
