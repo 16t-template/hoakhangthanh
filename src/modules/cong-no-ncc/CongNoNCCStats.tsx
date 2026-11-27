@@ -22,6 +22,7 @@ import {
 } from 'recharts';
 import { ChartCard, StatCard, useChartReady } from '@/components/data/StatsKit';
 import { useAllDebtRecords } from '@/lib/virtualDebt';
+import { DateRangeBar, useDateRange } from '@/components/data/DateRangeBar';
 import { useSupplierStore, calculateSupplierFinancials, useDebtStore, useSupplierOrderStore } from '@/stores/hoaKhangThanhStore';
 import { formatDate } from '@/lib/format';
 
@@ -34,26 +35,37 @@ const tick = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
 const BAR_COLORS = ['#10b981', '#06b6d4', '#f59e0b', '#3b82f6', '#ec4899', '#8b5cf6'];
 
 export function CongNoNCCStats() {
-  const records = useAllDebtRecords();
+  const allRecords = useAllDebtRecords();
   const { suppliers } = useSupplierStore();
   const { records: manualDebtRecords } = useDebtStore();
   const { orders: supplierOrders } = useSupplierOrderStore();
   const ready = useChartReady();
+  const dr = useDateRange('7d');
 
-  // Dữ liệu tài chính tính toán chuẩn cho từng NCC
+  // Phát sinh trong kỳ lọc & dữ liệu tới hết ngày cuối kỳ
+  const records = useMemo(() => allRecords.filter((r) => dr.inRange(r.date)), [allRecords, dr]);
+  const manualInRange = useMemo(() => manualDebtRecords.filter((r) => dr.inRange(r.date)), [manualDebtRecords, dr]);
+  const ordersInRange = useMemo(() => supplierOrders.filter((o) => dr.inRange(o.orderDate)), [supplierOrders, dr]);
+  const manualUpTo = useMemo(() => manualDebtRecords.filter((r) => dr.upToEnd(r.date)), [manualDebtRecords, dr]);
+  const ordersUpTo = useMemo(() => supplierOrders.filter((o) => dr.upToEnd(o.orderDate)), [supplierOrders, dr]);
+
+  // Dữ liệu tài chính từng NCC: nhập / trả trong kỳ, công nợ cuối kỳ; nợ đầu kỳ = cuối kỳ − nhập + trả
   const enrichedSuppliers = useMemo(() => {
     return suppliers.map((s) => {
-      const fin = calculateSupplierFinancials(s, manualDebtRecords, supplierOrders);
+      const period = calculateSupplierFinancials(s, manualInRange, ordersInRange);
+      const asOf = calculateSupplierFinancials(s, manualUpTo, ordersUpTo);
+      const importAmount = period.importAmount;
+      const paidAmount = period.paidAmount;
       return {
         ...s,
-        oldDebt: fin.oldDebt,
-        importAmount: fin.importAmount,
-        paidAmount: fin.paidAmount,
-        finalDebt: fin.finalDebt,
-        totalDebt: fin.totalDebt,
+        oldDebt: asOf.finalDebt - importAmount + paidAmount,
+        importAmount,
+        paidAmount,
+        finalDebt: asOf.finalDebt,
+        totalDebt: asOf.totalDebt,
       };
     });
-  }, [suppliers, manualDebtRecords, supplierOrders]);
+  }, [suppliers, manualInRange, ordersInRange, manualUpTo, ordersUpTo]);
 
   // Lọc riêng bản ghi công nợ NCC
   const nccRecords = useMemo(() => records.filter((r) => r.partnerType === 'ncc'), [records]);
@@ -123,6 +135,7 @@ export function CongNoNCCStats() {
 
   return (
     <div className="p-4 sm:p-5 space-y-5 overflow-y-auto max-w-7xl mx-auto">
+      <DateRangeBar state={dr} note={`Nhập / trả trong kỳ • Công nợ tới cuối kỳ • ${dr.label}`} />
       {/* Header giới thiệu */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border/60">
         <div className="flex items-center gap-2.5">

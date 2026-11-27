@@ -27,8 +27,8 @@ import type { ColumnDef } from '@/stores/createListStore';
 import { useColumnSettings } from '@/hooks/useColumnSettings';
 import { useUserPermissions } from '@/stores/permissionStore';
 import {
-  calculateDistributorFinancials,
   clearAllDebtAndOrderData,
+  computeAllDistributorFinancials,
   normalizeToISODate,
   useDebtStore,
   useDistributorStore,
@@ -95,6 +95,53 @@ export default function NPPPage() {
   const [drawerMode, setDrawerMode] = useState<'create' | 'edit' | 'view'>('create');
   const [selectedDistributor, setSelectedDistributor] = useState<Distributor | null>(null);
 
+  // Chỉ mục: đơn hàng & sổ công nợ của từng NPP (theo thứ tự mảng distributors), dựng 1 lần.
+  // Trước đây mỗi NPP lại duyệt toàn bộ đơn + công nợ → (212 × 2.700 đơn) phép so chuỗi, trang đứng ~1,7 giây.
+  const { ordersByDist, debtsByDist } = useMemo(() => {
+    const norm = (v?: string) => (v || '').trim().toLowerCase();
+    const phoneKey = (v?: string) => (v || '').replace(/\s+/g, '');
+    const byId = new Map<string, number>();
+    const byCode = new Map<string, number>();
+    const byName = new Map<string, number>();
+    const byPhone = new Map<string, number>();
+    distributors.forEach((d, i) => {
+      byId.set(d.id, i);
+      if (d.code) byCode.set(d.code, i);
+      if (norm(d.name) && !byName.has(norm(d.name))) byName.set(norm(d.name), i);
+      if (phoneKey(d.phone) && !byPhone.has(phoneKey(d.phone))) byPhone.set(phoneKey(d.phone), i);
+    });
+    const ordersByDist: Order[][] = distributors.map(() => []);
+    const debtsByDist: typeof debtRecords[] = distributors.map(() => []);
+    for (const o of orders) {
+      const hit = new Set<number>();
+      const a = o.distributorId ? byId.get(o.distributorId) : undefined;
+      if (a !== undefined) hit.add(a);
+      const b = byName.get(norm(o.distributorName));
+      if (b !== undefined) hit.add(b);
+      const c = phoneKey(o.phone) ? byPhone.get(phoneKey(o.phone)) : undefined;
+      if (c !== undefined) hit.add(c);
+      hit.forEach((i) => ordersByDist[i].push(o));
+    }
+    for (const r of debtRecords) {
+      if (r.partnerType !== 'npp') continue;
+      const hit = new Set<number>();
+      const a = r.partnerId ? byId.get(r.partnerId) : undefined;
+      if (a !== undefined) hit.add(a);
+      const b = r.partnerCode ? byCode.get(r.partnerCode) : undefined;
+      if (b !== undefined) hit.add(b);
+      const c = byName.get(norm(r.partnerName));
+      if (c !== undefined) hit.add(c);
+      hit.forEach((i) => debtsByDist[i].push(r));
+    }
+    return { ordersByDist, debtsByDist };
+  }, [distributors, orders, debtRecords]);
+
+  // Công nợ của tất cả NPP tính 1 lượt
+  const finMap = useMemo(
+    () => computeAllDistributorFinancials(distributors, debtRecords, orders),
+    [distributors, debtRecords, orders],
+  );
+
   // Theo dõi đơn hàng gần nhất của từng NPP (Đếm số ngày & kiểm tra quá 3 ngày chưa nhập thêm)
   const distributorOrderMap = useMemo(() => {
     const map = new Map<
@@ -108,20 +155,8 @@ export default function NPPPage() {
       }
     >();
 
-    distributors.forEach((d) => {
-      const matching = orders.filter((o) => {
-        const matchId = o.distributorId === d.id;
-        const matchName =
-          o.distributorName &&
-          (o.distributorName.toLowerCase() === d.name.toLowerCase() ||
-            d.name.toLowerCase().includes(o.distributorName.toLowerCase()) ||
-            o.distributorName.toLowerCase().includes(d.name.toLowerCase()));
-        const matchPhone =
-          o.phone &&
-          d.phone &&
-          o.phone.replace(/\s+/g, '') === d.phone.replace(/\s+/g, '');
-        return matchId || matchName || matchPhone;
-      });
+    distributors.forEach((d, di) => {
+      const matching = ordersByDist[di];
 
       const validOrders = matching.filter((o) => o.status !== 'huy' && o.status !== 'cancelled');
       const targetOrders = validOrders.length > 0 ? validOrders : matching;
@@ -158,7 +193,7 @@ export default function NPPPage() {
     });
 
     return map;
-  }, [distributors, orders]);
+  }, [distributors, ordersByDist]);
 
   // Theo dõi ngày trả nợ gần nhất của từng NPP (Từ phiếu thu nợ hoặc thanh toán đơn hàng)
   const distributorPaymentMap = useMemo(() => {
@@ -174,17 +209,11 @@ export default function NPPPage() {
       }
     >();
 
-    distributors.forEach((d) => {
-      const normName = d.name ? d.name.trim().toLowerCase() : '';
+    distributors.forEach((d, di) => {
       const payments: { date: string; amount: number; source: 'debt_receipt' | 'order'; code?: string }[] = [];
 
       // 1. Từ sổ công nợ (phiếu thu / trả nợ)
-      debtRecords.forEach((r) => {
-        if (r.partnerType !== 'npp') return;
-        const matchId = r.partnerId === d.id;
-        const matchCode = r.partnerCode && r.partnerCode === d.code;
-        const matchName = r.partnerName && r.partnerName.trim().toLowerCase() === normName;
-        if (!matchId && !matchCode && !matchName) return;
+      debtsByDist[di].forEach((r) => {
 
         const isThu = r.type === 'thu' || ((r.decreaseAmount || 0) > 0 && (r.increaseAmount || 0) === 0);
         const amt = r.decreaseAmount !== undefined ? r.decreaseAmount : (isThu ? (r.amount || 0) : 0);
@@ -195,15 +224,8 @@ export default function NPPPage() {
       });
 
       // 2. Từ đơn hàng đã thanh toán (paidAmount > 0)
-      orders.forEach((o) => {
+      ordersByDist[di].forEach((o) => {
         if (o.status === 'huy' || o.status === 'cancelled') return;
-        const matchId = o.distributorId === d.id;
-        const matchName =
-          o.distributorName &&
-          (o.distributorName.toLowerCase() === d.name.toLowerCase() ||
-            d.name.toLowerCase().includes(o.distributorName.toLowerCase()) ||
-            o.distributorName.toLowerCase().includes(d.name.toLowerCase()));
-        if (!matchId && !matchName) return;
 
         const paid = o.paidAmount || 0;
         if (paid > 0 && o.orderDate) {
@@ -245,12 +267,12 @@ export default function NPPPage() {
     });
 
     return map;
-  }, [distributors, debtRecords, orders]);
+  }, [distributors, ordersByDist, debtsByDist]);
 
   // Đồng bộ và tính toán chính xác tiền bán hoa, tiền thu nợ, công nợ cuối cho từng NPP từ sổ công nợ & đơn hàng
   const enrichedDistributors = useMemo(() => {
     return distributors.map((d) => {
-      const fin = calculateDistributorFinancials(d, debtRecords, orders);
+      const fin = finMap.get(d.id)!;
       const orderInfo = distributorOrderMap.get(d.id);
       const paymentInfo = distributorPaymentMap.get(d.id);
       return {
@@ -267,7 +289,7 @@ export default function NPPPage() {
         daysSinceLastPayment: paymentInfo?.daysAgo ?? undefined,
       };
     });
-  }, [distributors, debtRecords, orders, distributorOrderMap, distributorPaymentMap]);
+  }, [distributors, finMap, distributorOrderMap, distributorPaymentMap]);
 
   // Thống kê nhanh số lượng NPP theo tình trạng lên đơn & trả nợ
   const orderActivityCounts = useMemo(() => {
@@ -297,7 +319,7 @@ export default function NPPPage() {
       }
 
       const payInfo = distributorPaymentMap.get(d.id);
-      const fin = calculateDistributorFinancials(d, debtRecords, orders);
+      const fin = finMap.get(d.id)!;
       if (fin.finalDebt > 0 && (!payInfo || payInfo.daysAgo === null || (payInfo.daysAgo ?? 0) > 10)) {
         over_10_debt++;
       }
@@ -315,7 +337,7 @@ export default function NPPPage() {
       none,
       total: distributors.length,
     };
-  }, [distributors, distributorOrderMap, distributorPaymentMap, debtRecords, orders]);
+  }, [distributors, distributorOrderMap, distributorPaymentMap, finMap]);
 
   const tierOptions: FilterOption[] = [
     { label: 'VIP 1 (Kim Cương)', value: 'VIP 1 (Kim Cương)' },
@@ -948,6 +970,39 @@ export default function NPPPage() {
                   value={selectedStatuses}
                   onChange={setSelectedStatuses}
                 />
+                {/* Bộ lọc khoảng ngày theo đơn gần nhất */}
+                <div className="flex items-center gap-1.5 shrink-0 h-8 bg-background px-2 rounded-lg border border-border/70 shadow-2xs">
+                  <Calendar size={13} className="text-primary shrink-0" />
+                  <span className="text-[11px] text-muted-foreground font-medium whitespace-nowrap">Khoảng ngày đơn:</span>
+                  <input
+                    type="date"
+                    value={orderDateStart}
+                    onChange={(e) => setOrderDateStart(e.target.value)}
+                    className="h-6 px-1.5 text-xs rounded border border-border bg-card text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                    title="Đơn gần nhất từ ngày"
+                  />
+                  <span className="text-xs text-muted-foreground">-</span>
+                  <input
+                    type="date"
+                    value={orderDateEnd}
+                    onChange={(e) => setOrderDateEnd(e.target.value)}
+                    className="h-6 px-1.5 text-xs rounded border border-border bg-card text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                    title="Đơn gần nhất đến ngày"
+                  />
+                  {(orderDateStart || orderDateEnd) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOrderDateStart('');
+                        setOrderDateEnd('');
+                      }}
+                      className="h-6 px-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded transition-colors"
+                      title="Xóa lọc khoảng ngày"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </>
             }
           />
@@ -1088,39 +1143,6 @@ export default function NPPPage() {
               </button>
             </div>
 
-            {/* Bộ lọc khoảng ngày theo đơn gần nhất */}
-            <div className="flex items-center gap-1.5 shrink-0 bg-background/90 px-2 py-1 rounded-lg border border-border/70 shadow-2xs">
-              <Calendar size={13} className="text-primary shrink-0" />
-              <span className="text-[11px] text-muted-foreground font-medium whitespace-nowrap">Khoảng ngày đơn:</span>
-              <input
-                type="date"
-                value={orderDateStart}
-                onChange={(e) => setOrderDateStart(e.target.value)}
-                className="h-6 px-1.5 text-xs rounded border border-border bg-card text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
-                title="Đơn gần nhất từ ngày"
-              />
-              <span className="text-xs text-muted-foreground">-</span>
-              <input
-                type="date"
-                value={orderDateEnd}
-                onChange={(e) => setOrderDateEnd(e.target.value)}
-                className="h-6 px-1.5 text-xs rounded border border-border bg-card text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
-                title="Đơn gần nhất đến ngày"
-              />
-              {(orderDateStart || orderDateEnd) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOrderDateStart('');
-                    setOrderDateEnd('');
-                  }}
-                  className="h-6 px-1.5 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 rounded transition-colors"
-                  title="Xóa lọc khoảng ngày"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
           </div>
 
           <div className="flex-1 min-h-0">

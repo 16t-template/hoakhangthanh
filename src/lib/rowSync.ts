@@ -18,6 +18,20 @@ const snapshots = new Map<string, Map<string, unknown[]>>();
 // sheet → các id web đã thật sự tải được (chỉ những id này mới được phép xoá trên sheet).
 // Dòng web không đọc được (vd. chi tiết thiếu mã hoa) sẽ được giữ nguyên trên sheet.
 const loadedIds = new Map<string, Set<string>>();
+// Cách dựng các bảng như lúc vừa tải xong (dữ liệu chụp lại lúc tải) → chỉ chạy khi cần ghi lần đầu
+let loadedSource: (() => SheetTable[]) | null = null;
+
+function ensureLoadedIds() {
+  if (!loadedSource) return;
+  const build = loadedSource;
+  loadedSource = null;
+  for (const table of build()) setLoadedIdsFromTable(table);
+}
+
+/** Gọi khi tải xong: nhớ cách dựng bảng từ dữ liệu vừa tải (chưa tính ngay để mở trang nhanh) */
+export function setLoadedSource(build: () => SheetTable[]) {
+  loadedSource = build;
+}
 
 function canonNumber(n: number): string {
   if (!Number.isFinite(n) || n === 0) return '';
@@ -56,6 +70,7 @@ const isBlankRow = (row: unknown[]) => row.every((c) => c === '' || c === null |
 export function setSnapshotsFromPull(sheetMap: Record<string, unknown[][]>) {
   snapshots.clear();
   loadedIds.clear();
+  loadedSource = null;
   for (const [sheet, rows] of Object.entries(sheetMap)) {
     const m = new Map<string, unknown[]>();
     for (const r of rows) {
@@ -69,6 +84,7 @@ export function setSnapshotsFromPull(sheetMap: Record<string, unknown[][]>) {
 export function clearSnapshots() {
   snapshots.clear();
   loadedIds.clear();
+  loadedSource = null;
 }
 
 /** Gọi ngay sau khi tải xong: ghi nhận các id web đã đọc được từ sheet */
@@ -103,6 +119,7 @@ export function diffTable(table: SheetTable): TableDiff | null {
   const sheet = table.range.split('!')[0];
   const snap = snapshots.get(sheet);
   if (!snap) return null;
+  ensureLoadedIds();
 
   const rows = table.values.filter((r) => !isBlankRow(r));
   const width = rows.reduce((w, r) => Math.max(w, r.length), 0);
@@ -132,6 +149,7 @@ export function diffTable(table: SheetTable): TableDiff | null {
 
 /** Ghi thành công → cập nhật ảnh chụp */
 export function commitDiff(diff: TableDiff) {
+  ensureLoadedIds();
   snapshots.set(diff.sheet, diff.next);
   const loaded = loadedIds.get(diff.sheet);
   if (loaded) {
@@ -142,6 +160,7 @@ export function commitDiff(diff: TableDiff) {
 
 /** Sau khi ghi cả bảng (cách cũ) → ảnh chụp = bảng vừa ghi */
 export function setSnapshotFromTable(table: SheetTable) {
+  ensureLoadedIds();
   const sheet = table.range.split('!')[0];
   const rows = table.values.filter((r) => !isBlankRow(r));
   const m = new Map<string, unknown[]>();

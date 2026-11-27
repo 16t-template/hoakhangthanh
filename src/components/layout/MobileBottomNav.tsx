@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Bell, ChevronLeft, House } from 'lucide-react';
+import { ChevronLeft, House } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
-import { useNotificationStore } from '@/stores/notifications';
 
 function useIsMobile(breakpoint = 768) {
   const [mobile, setMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < breakpoint : false);
@@ -17,12 +16,11 @@ function useIsMobile(breakpoint = 768) {
   return mobile;
 }
 
-/** Thanh điều hướng dưới cùng trên điện thoại: Quay lại · Trang chủ · Thông báo. */
+/** Thanh điều hướng dưới cùng trên điện thoại: Quay lại · Trang chủ. */
 export function MobileBottomNav() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const unread = useNotificationStore((s) => s.notifications.filter((n) => !n.read).length);
   if (!isMobile) return null;
   const parent = pathname === '/' ? undefined : pathname.split('/').slice(0, -1).join('/') || '/';
 
@@ -62,19 +60,8 @@ export function MobileBottomNav() {
             <House size={26} strokeWidth={2} className="shrink-0" />
           </Link>
         </div>
-        <div className="flex-1 flex justify-center items-center min-w-0">
-          <span className="relative min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full text-muted-foreground">
-            <Bell size={24} strokeWidth={1.8} className="shrink-0" />
-            {unread > 0 && (
-              <span
-                className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-primary text-xs font-semibold text-primary-foreground rounded-full shadow-sm ring-2 ring-card"
-                aria-hidden
-              >
-                {unread > 99 ? '99+' : unread}
-              </span>
-            )}
-          </span>
-        </div>
+        {/* Ô trống giữ cân đối (đã bỏ chuông thông báo) */}
+        <div className="flex-1 min-w-0" aria-hidden />
       </div>
     </nav>
   );

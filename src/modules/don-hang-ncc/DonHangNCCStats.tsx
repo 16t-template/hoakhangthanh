@@ -60,7 +60,7 @@ export function DonHangNCCStats() {
   const ready = useChartReady();
 
   // Date Filter State
-  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [datePreset, setDatePreset] = useState<DatePreset>('7days');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all');

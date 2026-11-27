@@ -7,16 +7,22 @@ import {
   useSupplierOrderStore,
   useSupplierStore,
 } from '@/stores/hoaKhangThanhStore';
+import { DateRangeBar, useDateRange } from '@/components/data/DateRangeBar';
 
 export function NCCStats() {
   const { suppliers } = useSupplierStore();
   const { records: debtRecords } = useDebtStore();
   const { orders: supplierOrders } = useSupplierOrderStore();
   const ready = useChartReady();
+  const dr = useDateRange('7d');
+
+  // Công nợ tính tới hết ngày cuối kỳ lọc
+  const debtsUpTo = useMemo(() => debtRecords.filter((r) => dr.upToEnd(r.date)), [debtRecords, dr]);
+  const ordersUpTo = useMemo(() => supplierOrders.filter((o) => dr.upToEnd(o.orderDate)), [supplierOrders, dr]);
 
   const enrichedSuppliers = useMemo(() => {
     return suppliers.map((s) => {
-      const fin = calculateSupplierFinancials(s, debtRecords, supplierOrders);
+      const fin = calculateSupplierFinancials(s, debtsUpTo, ordersUpTo);
       return {
         ...s,
         oldDebt: fin.oldDebt,
@@ -26,7 +32,7 @@ export function NCCStats() {
         totalDebt: fin.totalDebt,
       };
     });
-  }, [suppliers, debtRecords, supplierOrders]);
+  }, [suppliers, debtsUpTo, ordersUpTo]);
 
   const metrics = useMemo(() => {
     const total = enrichedSuppliers.length;
@@ -49,9 +55,10 @@ export function NCCStats() {
 
   return (
     <div className="p-4 sm:p-5 space-y-5 overflow-y-auto max-w-7xl mx-auto">
+      <DateRangeBar state={dr} note={`Công nợ tính tới cuối kỳ • ${dr.label}`} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Tổng đối tác NCC" value={metrics.total} icon={Truck} primary />
-        <StatCard label="Tổng nợ phải trả NCC" value={formatVND(metrics.totalDebt)} icon={DollarSign} colorClass="bg-rose-500/10 text-rose-600 border-rose-200" />
+        <StatCard label="Nợ phải trả NCC (cuối kỳ)" value={formatVND(metrics.totalDebt)} icon={DollarSign} colorClass="bg-rose-500/10 text-rose-600 border-rose-200" />
         <StatCard label="Nhà vườn Đà Lạt" value={metrics.dalatCount} icon={MapPin} colorClass="bg-emerald-500/10 text-emerald-600 border-emerald-200" />
         <StatCard label="Điểm đánh giá TB" value={`${metrics.avgRating} ⭐`} icon={Star} colorClass="bg-amber-500/10 text-amber-600 border-amber-200" />
       </div>

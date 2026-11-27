@@ -3,7 +3,7 @@ import { GOOGLE_SHEETS_CONFIG } from '@/config/googleSheetsConfig';
 import { getActiveSpreadsheetId, sheetsRequestHeaders, spreadsheetUrlOf } from '@/stores/appSettingsStore';
 import { fromSheetDate } from '@/lib/sheetDate';
 import { buildSheetTables } from '@/lib/sheetTables';
-import { commitDiff, diffTable, setLoadedIdsFromTable, setSnapshotFromTable, setSnapshotsFromPull, type TableDiff } from '@/lib/rowSync';
+import { commitDiff, diffTable, setLoadedSource, setSnapshotFromTable, setSnapshotsFromPull, type TableDiff } from '@/lib/rowSync';
 import { useDailyStockReconcileStore, type DailyStockRecord } from '@/stores/dailyStockReconcileStore';
 import {
   useCashStore,
@@ -312,14 +312,47 @@ export async function syncAllToGoogleSheets(modules?: SyncableModule[]): Promise
   }
 }
 
+function rememberLoadedSource() {
+  const captured = collectSyncPayload();
+  setLoadedSource(() => Object.keys(captured).flatMap((key) => buildSheetTables({ [key]: captured[key] })));
+}
+
+// ---------- Bỏ qua xử lý lại khi dữ liệu trên sheet không đổi so với lần tải trước ----------
+const PULL_SIG_KEY = 'hkt-last-pull-signature';
+function hashText(text: string): string {
+  // FNV-1a 32-bit + độ dài: đủ để biết nội dung có đổi hay không
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return `${text.length}:${(h >>> 0).toString(16)}`;
+}
+function rememberPullSignature(sig: string) {
+  try {
+    localStorage.setItem(PULL_SIG_KEY, sig);
+  } catch {
+    /* bỏ qua */
+  }
+}
+function lastPullSignature(): string | null {
+  try {
+    return localStorage.getItem(PULL_SIG_KEY);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Tải toàn bộ dữ liệu từ Google Sheets về cập nhật vào tất cả Store trên web
  */
-export async function pullFromGoogleSheets(): Promise<{ success: boolean; message: string }> {
+export async function pullFromGoogleSheets(): Promise<{ success: boolean; message: string; unchanged?: boolean }> {
   let resumeAudit: (() => void) | undefined;
   try {
     const res = await fetch('/api/google-sheets/pull-all', { headers: sheetsRequestHeaders() });
-    const result = await res.json();
+    const rawText = await res.text();
+    const result = JSON.parse(rawText);
+    const pullSignature = `${getActiveSpreadsheetId()}|${hashText(rawText)}`;
     if (!res.ok || !result.success) {
       throw new Error(result.error ? JSON.stringify(result.error) : 'Lỗi khi tải từ Google Sheets');
     }
@@ -336,6 +369,14 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
     }
     // Ảnh chụp nội dung sheet: lần ghi sau chỉ gửi các dòng khác với ảnh chụp này
     setSnapshotsFromPull(sheetMap);
+
+    // Sheet không đổi so với lần tải trước & web đã có dữ liệu → không xử lý lại (mở trang mượt)
+    if (pullSignature === lastPullSignature() && useOrderStore.getState().orders.length > 0) {
+      resumeAudit?.();
+      resumeAudit = undefined;
+      rememberLoadedSource();
+      return { success: true, unchanged: true, message: 'Dữ liệu Google Sheets không đổi so với lần tải trước' };
+    }
 
     const counts: Record<string, number> = {};
 
@@ -1064,9 +1105,10 @@ export async function pullFromGoogleSheets(): Promise<{ success: boolean; messag
     recalcAllDistributorsDebts();
     recalcAllSuppliersDebts();
 
-    // Ghi nhận các dòng web đã đọc được: chỉ những dòng này mới có thể bị xoá trên sheet khi ghi theo dòng
-    const loadedPayload = collectSyncPayload();
-    for (const key of Object.keys(loadedPayload)) buildSheetTables({ [key]: loadedPayload[key] }).forEach(setLoadedIdsFromTable);
+    // Ghi nhận các dòng web đã đọc được (chỉ những dòng này mới có thể bị xoá trên sheet khi ghi theo dòng).
+    // Chụp lại dữ liệu lúc này, nhưng chỉ dựng bảng khi ghi lần đầu → mở trang không bị khựng.
+    rememberLoadedSource();
+    rememberPullSignature(pullSignature);
 
     const parts = [
       counts['hoa'] ? `${counts['hoa']} loại hoa` : '',

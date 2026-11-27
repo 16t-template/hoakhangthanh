@@ -91,9 +91,18 @@ export function DonHangStats() {
   const ready = useChartReady();
 
   // Date Filter State
-  const [datePreset, setDatePreset] = useState<DatePreset>('all');
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
+  // Mặc định lọc 7 ngày gần nhất
+  const weekRange = () => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const today = new Date();
+    const past = new Date(today);
+    past.setDate(today.getDate() - 6);
+    return { start: toISO(past), end: toISO(today) };
+  };
+  const [datePreset, setDatePreset] = useState<DatePreset>('7days');
+  const [startDate, setStartDate] = useState<string>(() => weekRange().start);
+  const [endDate, setEndDate] = useState<string>(() => weekRange().end);
   const [selectedPartner, setSelectedPartner] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [viewMode, setViewMode] = useState<ViewMode>('aggregated');
@@ -119,15 +128,33 @@ export function DonHangStats() {
     return map;
   }, [flowers]);
 
-  // Top metric overview (Bao gồm Doanh số, Giá vốn, Lợi nhuận gộp & Tỷ suất lợi nhuận)
+  // Đơn theo bộ lọc ngày & khách (dùng cho ô tổng và biểu đồ)
+  const statsOrders = useMemo(() => {
+    const toYMD = (dStr?: string) => {
+      if (!dStr) return '';
+      const t = dStr.trim();
+      if (t.includes('T')) return t.split('T')[0];
+      const m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : t.slice(0, 10);
+    };
+    return orders.filter((o) => {
+      const d = toYMD(o.orderDate);
+      if (startDate && d < startDate) return false;
+      if (endDate && d > endDate) return false;
+      if (selectedPartner !== 'all' && o.distributorName !== selectedPartner) return false;
+      return true;
+    });
+  }, [orders, startDate, endDate, selectedPartner]);
+
+  // Top metric overview (Bao gồm Doanh số, Giá vốn, Lợi nhuận gộp & Tỷ suất lợi nhuận) — theo bộ lọc
   const metrics = useMemo(() => {
-    const total = orders.length;
-    const totalVal = orders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    const total = statsOrders.length;
+    const totalVal = statsOrders.reduce((sum, o) => sum + (o.totalAmount || 0), 0);
 
     let totalCost = 0;
     let totalProfit = 0;
 
-    orders.forEach((o) => {
+    statsOrders.forEach((o) => {
       let oCost = 0;
       o.items?.forEach((item) => {
         const flower = flowerMap.get(item.flowerId) || flowerMap.get((item.flowerCode || '').trim().toLowerCase());
@@ -146,12 +173,12 @@ export function DonHangStats() {
     const profitMargin = totalVal > 0 ? Math.round((totalProfit / totalVal) * 1000) / 10 : 0;
 
     return { total, totalVal, totalCost, totalProfit, profitMargin };
-  }, [orders, flowerMap]);
+  }, [statsOrders, flowerMap]);
 
   // Chart: revenue by partner
   const byPartner = useMemo(() => {
     const map: Record<string, number> = {};
-    orders.forEach((o) => {
+    statsOrders.forEach((o) => {
       const name = o.distributorName.length > 15 ? `${o.distributorName.slice(0, 15)}...` : o.distributorName;
       map[name] = (map[name] || 0) + o.totalAmount / 1000000;
     });
@@ -159,7 +186,7 @@ export function DonHangStats() {
       name,
       value: Math.round(value * 10) / 10,
     }));
-  }, [orders]);
+  }, [statsOrders]);
 
 
   // Quick date preset handlers

@@ -2,10 +2,14 @@ import { useMemo } from 'react';
 import { ArrowDownLeft, ArrowUpRight, DollarSign, Wallet } from 'lucide-react';
 import { BarChartBox, ChartCard, StatCard, useChartReady } from '@/components/data/StatsKit';
 import { useCashStore } from '@/stores/hoaKhangThanhStore';
+import { DateRangeBar, useDateRange } from '@/components/data/DateRangeBar';
 
 export function ThuChiStats() {
-  const { transactions } = useCashStore();
+  const { transactions: allTransactions } = useCashStore();
   const ready = useChartReady();
+  const dr = useDateRange('7d');
+  // Phiếu thu chi trong khoảng ngày đang lọc
+  const transactions = useMemo(() => allTransactions.filter((t) => dr.inRange(t.date)), [allTransactions, dr]);
 
   const metrics = useMemo(() => {
     const totalIncome = transactions
@@ -38,9 +42,10 @@ export function ThuChiStats() {
 
   return (
     <div className="p-4 sm:p-5 space-y-5 overflow-y-auto max-w-7xl mx-auto">
+      <DateRangeBar state={dr} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
-          label="Tồn quỹ ròng khả dụng"
+          label="Thu − Chi trong kỳ"
           value={formatNumber(metrics.balance)}
           icon={Wallet}
           primary

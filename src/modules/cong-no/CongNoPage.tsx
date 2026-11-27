@@ -90,9 +90,18 @@ export default function CongNoPage() {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Date Filter State
-  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom'>('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Mặc định lọc 7 ngày gần nhất
+  const weekRange = () => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const today = new Date();
+    const past = new Date(today);
+    past.setDate(today.getDate() - 6);
+    return { start: toISO(past), end: toISO(today) };
+  };
+  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom'>('week');
+  const [startDate, setStartDate] = useState(() => weekRange().start);
+  const [endDate, setEndDate] = useState(() => weekRange().end);
 
   // Partner Filter
   const [selectedPartnerId, setSelectedPartnerId] = useState<string>('all');
@@ -176,7 +185,7 @@ export default function CongNoPage() {
       setEndDate(s);
     } else if (mode === 'week') {
       const past7 = new Date(today);
-      past7.setDate(today.getDate() - 7);
+      past7.setDate(today.getDate() - 6);
       setStartDate(toISO(past7));
       setEndDate(toISO(today));
     } else if (mode === 'month') {
@@ -1292,64 +1301,15 @@ export default function CongNoPage() {
                     <RotateCcw size={12} /> Xóa lọc
                   </button>
                 )}
-              </div>
-            </div>
 
-            {/* 4 Summary Cards (Thu, Chi, Số tiền, Công nợ còn) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-              <div className="bg-card/80 rounded-lg border border-border p-2.5 flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-md bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
-                  <ArrowDownLeft size={14} />
+                {/* Tổng Thu / Chi theo bộ lọc đang chọn */}
+                <div className="h-7 px-2.5 rounded border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/30 dark:border-emerald-800 flex items-center gap-1.5 text-xs">
+                  <span className="text-muted-foreground">Thu:</span>
+                  <span className="font-bold text-emerald-600 font-mono">{formatNumber(summaryStats.totalThu)}</span>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground truncate uppercase font-semibold">
-                    1. Tổng Thu (-)
-                  </p>
-                  <p className="text-sm font-bold text-emerald-600 font-mono truncate">
-                    {formatNumber(summaryStats.totalThu)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-card/80 rounded-lg border border-border p-2.5 flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-md bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
-                  <ArrowUpRight size={14} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground truncate uppercase font-semibold">
-                    2. Tổng Chi (+)
-                  </p>
-                  <p className="text-sm font-bold text-foreground font-mono truncate">
-                    {formatNumber(summaryStats.totalChi)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-card/80 rounded-lg border border-border p-2.5 flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-md bg-muted flex items-center justify-center shrink-0 text-muted-foreground">
-                  <Layers size={14} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-muted-foreground truncate uppercase font-semibold">
-                    3. Số tiền phát sinh
-                  </p>
-                  <p className="text-sm font-bold text-foreground font-mono truncate">
-                    {formatNumber(summaryStats.totalAmount)}
-                  </p>
-                </div>
-              </div>
-
-              <div className="bg-card/80 rounded-lg border border-rose-300/40 bg-rose-50/20 dark:bg-rose-950/20 p-2.5 flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-md bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
-                  <Receipt size={14} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[10px] text-rose-600 truncate uppercase font-bold">
-                    4. Công nợ còn
-                  </p>
-                  <p className="text-sm font-extrabold text-rose-600 font-mono truncate">
-                    {formatNumber(summaryStats.totalRemainingDebt)}
-                  </p>
+                <div className="h-7 px-2.5 rounded border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-800 flex items-center gap-1.5 text-xs">
+                  <span className="text-muted-foreground">Chi:</span>
+                  <span className="font-bold text-blue-600 font-mono">{formatNumber(summaryStats.totalChi)}</span>
                 </div>
               </div>
             </div>

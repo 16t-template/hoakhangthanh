@@ -23,6 +23,7 @@ import {
 import { reloadFromNewSpreadsheet, useGoogleSheetsStore } from '@/stores/googleSheetsStore';
 import { checkGoogleSheetsConnection, type GoogleSheetsStatus } from '@/lib/googleSheetsService';
 import { GOOGLE_SHEETS_CONFIG } from '@/config/googleSheetsConfig';
+import { GoogleSheetsHeaderButton } from '@/components/google-sheets/GoogleSheetsHeaderButton';
 
 /** Các tab app đọc / ghi. Sheet mới nên có đủ các tab này (dòng 1 là tiêu đề cột). */
 const REQUIRED_TABS = [
@@ -160,9 +161,13 @@ export default function CaiDatPage() {
 
       {/* Sheet đang dùng */}
       <section className="p-4 rounded-xl border border-border bg-card shadow-sm space-y-3">
-        <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-          <FileSpreadsheet size={16} className="text-emerald-600" /> Google Sheet đang dùng
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
+            <FileSpreadsheet size={16} className="text-emerald-600" /> Google Sheet đang dùng
+          </h2>
+          {/* Tải về / Đồng bộ lên / Nhật ký đồng bộ (trước đây nằm trên thanh trên cùng) */}
+          <GoogleSheetsHeaderButton />
+        </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <code className="px-2 py-1 rounded bg-muted border border-border font-mono break-all">{activeId}</code>
           {isDefault ? (

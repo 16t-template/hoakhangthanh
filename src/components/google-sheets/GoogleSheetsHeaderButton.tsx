@@ -29,7 +29,7 @@ export function GoogleSheetsHeaderButton() {
             </span>
           )}
         </div>
-        <span className="hidden lg:inline text-[11px] font-bold tracking-tight">Google Sheets</span>
+        <span className="text-[11px] font-bold tracking-tight">Đồng bộ Google Sheets</span>
       </button>
 
       {isOpen && <GoogleSheetsModal isOpen={isOpen} onClose={() => setIsOpen(false)} />}

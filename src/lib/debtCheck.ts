@@ -61,6 +61,52 @@ export function getDaysDifference(dateStr: string, asOfDateStr?: string): number
   return Math.floor((d2Utc - d1Utc) / (1000 * 60 * 60 * 24));
 }
 
+// ---------- Chỉ mục có bộ nhớ đệm (dựng lại khi mảng dữ liệu đổi) ----------
+// Trước đây mỗi khách hàng lại duyệt TOÀN BỘ đơn + sổ công nợ → trang Đơn hàng đứng 1–2 giây.
+type IdxMaps = { byId: Map<string, number[]>; byName: Map<string, number[]> };
+const lower = (v?: string) => (v ? v.trim().toLowerCase() : '');
+function addIdx(m: Map<string, number[]>, k: string, i: number) {
+  if (!k) return;
+  const list = m.get(k);
+  if (list) list.push(i);
+  else m.set(k, [i]);
+}
+const orderIdxCache = new WeakMap<Order[], IdxMaps>();
+function orderIdx(orders: Order[]): IdxMaps {
+  let idx = orderIdxCache.get(orders);
+  if (!idx) {
+    idx = { byId: new Map(), byName: new Map() };
+    orders.forEach((o, i) => {
+      addIdx(idx!.byId, o.distributorId || '', i);
+      addIdx(idx!.byName, lower(o.distributorName), i);
+    });
+    orderIdxCache.set(orders, idx);
+  }
+  return idx;
+}
+const nppDebtIdxCache = new WeakMap<DebtDailyRecord[], IdxMaps>();
+function nppDebtIdx(records: DebtDailyRecord[]): IdxMaps {
+  let idx = nppDebtIdxCache.get(records);
+  if (!idx) {
+    idx = { byId: new Map(), byName: new Map() };
+    records.forEach((r, i) => {
+      if (r.partnerType !== 'npp') return;
+      addIdx(idx!.byId, r.partnerId || '', i);
+      addIdx(idx!.byName, lower(r.partnerName), i);
+    });
+    nppDebtIdxCache.set(records, idx);
+  }
+  return idx;
+}
+/** Lấy các phần tử theo chỉ số (hợp 2 danh sách), giữ đúng thứ tự gốc trong mảng */
+function pickByIdx<T>(arr: T[], a?: number[], b?: number[]): T[] {
+  if (!a?.length && !b?.length) return [];
+  const set = new Set<number>([...(a || []), ...(b || [])]);
+  return Array.from(set)
+    .sort((x, y) => x - y)
+    .map((i) => arr[i]);
+}
+
 /**
  * Kiểm tra công nợ quá hạn 4 ngày của khách hàng theo nguyên tắc FIFO (Khoản nợ cũ nhất trả trước).
  *
@@ -94,30 +140,34 @@ export function checkCustomerOverdueDebt(
 
   const cleanName = customerName.trim().toLowerCase();
 
-  // 1. Lọc các đơn hàng trước đó của khách hàng này (loại trừ đơn hàng đang tạo / sửa hiện tại)
-  const pastOrders = allOrders.filter((o) => {
-    if (currentOrderId && o.id === currentOrderId) return false;
-    if (customerId && o.distributorId === customerId) return true;
-    if (cleanName && o.distributorName) {
-      const orderCustomer = o.distributorName.trim().toLowerCase();
-      if (orderCustomer === cleanName) return true;
-    }
-    return false;
-  });
+  // 1. Các đơn hàng trước đó của khách hàng này (loại trừ đơn hàng đang tạo / sửa hiện tại) — tra chỉ mục
+  const oIdx = orderIdx(allOrders);
+  const pastOrders = pickByIdx(
+    allOrders,
+    customerId ? oIdx.byId.get(customerId) : undefined,
+    cleanName ? oIdx.byName.get(cleanName) : undefined,
+  ).filter((o) => !(currentOrderId && o.id === currentOrderId));
 
   // Lấy các bản ghi công nợ từ useDebtStore
   const allDebtRecords =
     debtRecords ||
     (typeof window !== 'undefined' ? useDebtStore.getState().records : []);
 
+  // Sổ công nợ NPP của khách hàng này (tra chỉ mục: theo id hoặc tên)
+  const dIdx = nppDebtIdx(allDebtRecords);
+  const customerRecords = pickByIdx(
+    allDebtRecords,
+    customerId ? dIdx.byId.get(customerId) : undefined,
+    cleanName ? dIdx.byName.get(cleanName) : undefined,
+  );
+
   // Tìm các chứng từ thanh toán (Phiếu thu / Thu nợ) của khách hàng từ sổ công nợ
   const orderCodes = new Set(pastOrders.map((o) => o.code));
-  const debtStorePayments = allDebtRecords.filter((r) => {
-    if (r.partnerType !== 'npp') return false;
-    let match = false;
-    if (customerId && r.partnerId === customerId) match = true;
-    else if (cleanName && r.partnerName && r.partnerName.trim().toLowerCase() === cleanName) match = true;
-    if (!match) return false;
+  const orderByCode = new Map<string, Order>();
+  pastOrders.forEach((o) => {
+    if (o.code && !orderByCode.has(o.code)) orderByCode.set(o.code, o);
+  });
+  const debtStorePayments = customerRecords.filter((r) => {
 
     // Khoản thanh toán: có type === 'thu' hoặc decreaseAmount > 0
     const isThu = r.type === 'thu' || (r.decreaseAmount !== undefined && r.decreaseAmount > 0);
@@ -125,7 +175,7 @@ export function checkCustomerOverdueDebt(
 
     // Tránh tính 2 lần nếu chứng từ tham chiếu đến đơn hàng đã có sẵn paidAmount > 0
     if (r.referenceCode && orderCodes.has(r.referenceCode)) {
-      const linkedOrder = pastOrders.find((o) => o.code === r.referenceCode);
+      const linkedOrder = orderByCode.get(r.referenceCode);
       if (linkedOrder && (linkedOrder.paidAmount || 0) > 0) {
         return false;
       }
@@ -144,12 +194,7 @@ export function checkCustomerOverdueDebt(
   const totalPastOrdersAmount = pastOrders.reduce((sum, o) => sum + getOrderTotal(o), 0);
 
   // 2. Tìm thêm các khoản nợ thủ công (nếu có trong useDebtStore với type === 'chi' không thuộc đơn hàng nào)
-  const manualDebtRecords = allDebtRecords.filter((r) => {
-    if (r.partnerType !== 'npp') return false;
-    let match = false;
-    if (customerId && r.partnerId === customerId) match = true;
-    else if (cleanName && r.partnerName && r.partnerName.trim().toLowerCase() === cleanName) match = true;
-    if (!match) return false;
+  const manualDebtRecords = customerRecords.filter((r) => {
 
     const isDebt = r.type === 'chi' || (r.increaseAmount !== undefined && r.increaseAmount > 0);
     if (!isDebt) return false;

@@ -44,6 +44,7 @@ import {
   useSupplierStore,
 } from '@/stores/hoaKhangThanhStore';
 import type { Order, SupplierOrder } from '@/types/hoaKhangThanh';
+import { NppDebtSection } from './NppDebtSection';
 
 type Preset = 'today' | '7d' | 'month' | 'lastMonth' | 'year' | 'all' | 'custom';
 type GroupBy = 'day' | 'month';
@@ -115,8 +116,8 @@ export default function DashboardPage() {
   const debtRecords = useDebtStore((s) => s.records);
 
   // ---------- Bộ lọc ----------
-  const [preset, setPreset] = useState<Preset>('month');
-  const [range, setRange] = useState(() => presetRange('month'));
+  const [preset, setPreset] = useState<Preset>('7d');
+  const [range, setRange] = useState(() => presetRange('7d'));
   const [nppName, setNppName] = useState('');
   const [nccName, setNccName] = useState('');
   const [search, setSearch] = useState('');
@@ -632,6 +633,9 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Dashboard NPP: công nợ theo từng NPP + phát sinh theo ngày / tháng */}
+      <NppDebtSection range={range} nppName={nppName} search={search} groupBy={groupBy} rangeLabel={rangeLabel} />
     </div>
   );
 }

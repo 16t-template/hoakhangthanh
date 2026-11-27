@@ -21,6 +21,7 @@ import {
 } from 'recharts';
 import { ChartCard, StatCard, useChartReady } from '@/components/data/StatsKit';
 import { useAllDebtRecords } from '@/lib/virtualDebt';
+import { DateRangeBar, useDateRange } from '@/components/data/DateRangeBar';
 import { formatDate } from '@/lib/format';
 
 const formatNumber = (num?: number) => {
@@ -32,8 +33,11 @@ const tick = { fontSize: 10, fill: 'hsl(var(--muted-foreground))' };
 const PIE_COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#3b82f6', '#ec4899', '#06b6d4'];
 
 export function CongNoStats() {
-  const records = useAllDebtRecords();
+  const allRecords = useAllDebtRecords();
   const ready = useChartReady();
+  const dr = useDateRange('7d');
+  // Phát sinh công nợ trong khoảng ngày đang lọc
+  const records = useMemo(() => allRecords.filter((r) => dr.inRange(r.date)), [allRecords, dr]);
 
   // NPP records and NCC records
   const nppRecords = useMemo(() => records.filter((r) => r.partnerType === 'npp'), [records]);
@@ -131,6 +135,7 @@ export function CongNoStats() {
 
   return (
     <div className="p-4 sm:p-5 space-y-5 overflow-y-auto max-w-7xl mx-auto">
+      <DateRangeBar state={dr} />
       {/* KPI Cards cho NPP */}
       <div>
         <div className="flex items-center gap-2 mb-2.5">

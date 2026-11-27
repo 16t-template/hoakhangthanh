@@ -9,27 +9,36 @@ import {
   useOrderStore,
 } from '@/stores/hoaKhangThanhStore';
 import { getDaysDifference } from '@/lib/debtCheck';
+import { DateRangeBar, useDateRange } from '@/components/data/DateRangeBar';
 
 export function NPPStats() {
   const { distributors } = useDistributorStore();
   const { orders } = useOrderStore();
   const { records: debtRecords } = useDebtStore();
   const ready = useChartReady();
+  const dr = useDateRange('7d');
+
+  // Doanh số: chỉ phát sinh trong kỳ lọc • Công nợ: tính tới hết ngày cuối kỳ
+  const debtsInRange = useMemo(() => debtRecords.filter((r) => dr.inRange(r.date)), [debtRecords, dr]);
+  const ordersInRange = useMemo(() => orders.filter((o) => dr.inRange(o.orderDate)), [orders, dr]);
+  const debtsUpTo = useMemo(() => debtRecords.filter((r) => dr.upToEnd(r.date)), [debtRecords, dr]);
+  const ordersUpTo = useMemo(() => orders.filter((o) => dr.upToEnd(o.orderDate)), [orders, dr]);
 
   const enrichedDistributors = useMemo(() => {
     return distributors.map((d) => {
-      const fin = calculateDistributorFinancials(d, debtRecords, orders);
+      const period = calculateDistributorFinancials(d, debtsInRange, ordersInRange);
+      const asOf = calculateDistributorFinancials(d, debtsUpTo, ordersUpTo);
       return {
         ...d,
-        oldDebt: fin.oldDebt,
-        salesAmount: fin.salesAmount,
-        collectedAmount: fin.collectedAmount,
-        finalDebt: fin.finalDebt,
-        currentDebt: fin.finalDebt,
-        totalRevenue: fin.totalRevenue,
+        oldDebt: asOf.oldDebt,
+        salesAmount: period.salesAmount,
+        collectedAmount: period.collectedAmount,
+        finalDebt: asOf.finalDebt,
+        currentDebt: asOf.finalDebt,
+        totalRevenue: period.totalRevenue,
       };
     });
-  }, [distributors, debtRecords, orders]);
+  }, [distributors, debtsInRange, ordersInRange, debtsUpTo, ordersUpTo]);
 
   const metrics = useMemo(() => {
     const total = enrichedDistributors.length;
@@ -95,6 +104,7 @@ export function NPPStats() {
 
   return (
     <div className="p-4 sm:p-5 space-y-5 overflow-y-auto max-w-7xl mx-auto">
+      <DateRangeBar state={dr} note={`Doanh số trong kỳ • Công nợ tới cuối kỳ • ${dr.label}`} />
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard label="Tổng đại lý / Shop hoa" value={metrics.total} icon={Store} primary />
         <StatCard
@@ -104,13 +114,13 @@ export function NPPStats() {
           colorClass="bg-rose-500/10 text-rose-600 border-rose-300"
         />
         <StatCard
-          label="Tổng doanh số tích lũy"
+          label="Doanh số trong kỳ"
           value={formatNumber(metrics.totalRevenue)}
           icon={DollarSign}
           colorClass="bg-emerald-500/10 text-emerald-600 border-emerald-200"
         />
         <StatCard
-          label="Công nợ NPP còn thiếu"
+          label="Công nợ NPP (cuối kỳ)"
           value={formatNumber(metrics.totalDebt)}
           icon={CreditCard}
           colorClass="bg-rose-500/10 text-rose-600 border-rose-200"
@@ -125,7 +135,7 @@ export function NPPStats() {
 
       {ready && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <ChartCard title="Doanh số tích lũy theo từng đại lý (Triệu VNĐ)" icon={<DollarSign size={15} className="text-primary" />}>
+          <ChartCard title="Doanh số trong kỳ theo từng đại lý (Triệu VNĐ)" icon={<DollarSign size={15} className="text-primary" />}>
             <BarChartBox data={byRevenue} seriesName="Triệu VNĐ" />
           </ChartCard>
 

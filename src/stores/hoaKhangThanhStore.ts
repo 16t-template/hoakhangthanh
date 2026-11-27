@@ -950,6 +950,54 @@ export function normalizeToISODate(dateStr?: string): string {
   return toInputDate(trimmed) || todayISODate();
 }
 
+// ---------- Chỉ mục có bộ nhớ đệm: đơn & sổ công nợ gom theo id / mã / tên đối tác ----------
+// Dựng lại chỉ khi mảng dữ liệu đổi (so theo tham chiếu). Nhờ vậy tính công nợ cho 1 đối tác
+// chỉ tra vài danh sách nhỏ thay vì duyệt toàn bộ hàng nghìn đơn / dòng công nợ.
+type GroupIndex<T> = { byId: Map<string, T[]>; byCode: Map<string, T[]>; byName: Map<string, T[]> };
+const normKey = (v?: string) => (v ? v.trim().toLowerCase() : '');
+function pushTo<T>(m: Map<string, T[]>, k: string | undefined, v: T) {
+  if (!k) return;
+  const list = m.get(k);
+  if (list) list.push(v);
+  else m.set(k, [v]);
+}
+const debtIndexCache = new WeakMap<DebtDailyRecord[], Record<'npp' | 'ncc', GroupIndex<DebtDailyRecord>>>();
+function debtIndex(records: DebtDailyRecord[], type: 'npp' | 'ncc'): GroupIndex<DebtDailyRecord> {
+  let idx = debtIndexCache.get(records);
+  if (!idx) {
+    const mk = (): GroupIndex<DebtDailyRecord> => ({ byId: new Map(), byCode: new Map(), byName: new Map() });
+    idx = { npp: mk(), ncc: mk() };
+    for (const r of records) {
+      const g = r.partnerType === 'ncc' ? idx.ncc : r.partnerType === 'npp' ? idx.npp : null;
+      if (!g) continue;
+      pushTo(g.byId, r.partnerId, r);
+      pushTo(g.byCode, r.partnerCode, r);
+      pushTo(g.byName, normKey(r.partnerName), r);
+    }
+    debtIndexCache.set(records, idx);
+  }
+  return idx[type];
+}
+const orderIndexCache = new WeakMap<object[], GroupIndex<any>>();
+function orderIndex<T>(list: T[], idOf: (o: T) => string | undefined, nameOf: (o: T) => string | undefined): GroupIndex<T> {
+  let idx = orderIndexCache.get(list as unknown as object[]) as GroupIndex<T> | undefined;
+  if (!idx) {
+    idx = { byId: new Map(), byCode: new Map(), byName: new Map() };
+    for (const o of list) {
+      pushTo(idx.byId, idOf(o), o);
+      pushTo(idx.byName, normKey(nameOf(o)), o);
+    }
+    orderIndexCache.set(list as unknown as object[], idx);
+  }
+  return idx;
+}
+function unionOf<T>(...lists: (T[] | undefined)[]): T[] {
+  const nonEmpty = lists.filter((l): l is T[] => !!l && l.length > 0);
+  if (nonEmpty.length === 0) return [];
+  if (nonEmpty.length === 1) return nonEmpty[0];
+  return Array.from(new Set(nonEmpty.flat()));
+}
+
 /**
  * Tính toán tài chính công nợ & tiền bán hoa của NPP từ sổ công nợ và đơn hàng
  */
@@ -960,15 +1008,20 @@ export function calculateDistributorFinancials(
 ) {
   const normName = distributor.name ? distributor.name.trim().toLowerCase() : '';
 
-  // 1. Lọc tất cả bản ghi công nợ của NPP này
-  const matchingRecords = debtRecords.filter(
-    (r) =>
-      r.partnerType === 'npp' &&
-      (r.partnerId === distributor.id ||
-        (r.partnerCode && r.partnerCode === distributor.code) ||
-        (r.partnerName && r.partnerName.trim().toLowerCase() === normName))
+  // 1. Bản ghi công nợ của NPP này (tra chỉ mục: theo id / mã / tên)
+  const di = debtIndex(debtRecords, 'npp');
+  const matchingRecords = unionOf(
+    di.byId.get(distributor.id),
+    distributor.code ? di.byCode.get(distributor.code) : undefined,
+    normName ? di.byName.get(normName) : undefined,
   );
+  // 2. Các đơn hàng của NPP này
+  const oi = orderIndex(orders, (o) => o.distributorId, (o) => o.distributorName);
+  const matchingOrders = unionOf(oi.byId.get(distributor.id), normName ? oi.byName.get(normName) : undefined);
+  return distributorFinancialsFrom(distributor, matchingRecords, matchingOrders);
+}
 
+function distributorFinancialsFrom(distributor: Distributor, matchingRecords: DebtDailyRecord[], matchingOrders: Order[]) {
   let debtSales = 0;
   let debtCollected = 0;
   const recordedOrderCodes = new Set<string>();
@@ -983,13 +1036,7 @@ export function calculateDistributorFinancials(
     if (r.id && r.id.startsWith('debt-dh-')) recordedOrderCodes.add(r.id.replace('debt-dh-', ''));
   }
 
-  // 2. Các đơn hàng chưa ghi nhận vào sổ công nợ
-  const matchingOrders = orders.filter(
-    (o) =>
-      o.distributorId === distributor.id ||
-      (o.distributorName && o.distributorName.trim().toLowerCase() === normName)
-  );
-
+  // Các đơn hàng chưa ghi nhận vào sổ công nợ
   let unrecordedSales = 0;
   let unrecordedCollected = 0;
 
@@ -1025,14 +1072,18 @@ export function calculateSupplierFinancials(
 ) {
   const normName = supplier.name ? supplier.name.trim().toLowerCase() : '';
 
-  const matchingRecords = debtRecords.filter(
-    (r) =>
-      r.partnerType === 'ncc' &&
-      (r.partnerId === supplier.id ||
-        (r.partnerCode && r.partnerCode === supplier.code) ||
-        (r.partnerName && r.partnerName.trim().toLowerCase() === normName))
+  const di = debtIndex(debtRecords, 'ncc');
+  const matchingRecords = unionOf(
+    di.byId.get(supplier.id),
+    supplier.code ? di.byCode.get(supplier.code) : undefined,
+    normName ? di.byName.get(normName) : undefined,
   );
+  const oi = orderIndex(supplierOrders, (o) => o.supplierId, (o) => o.supplierName);
+  const matchingOrders = unionOf(oi.byId.get(supplier.id), normName ? oi.byName.get(normName) : undefined);
+  return supplierFinancialsFrom(supplier, matchingRecords, matchingOrders);
+}
 
+function supplierFinancialsFrom(supplier: Supplier, matchingRecords: DebtDailyRecord[], matchingOrders: SupplierOrder[]) {
   let debtImport = 0;
   let debtPaid = 0;
   const recordedOrderCodes = new Set<string>();
@@ -1046,12 +1097,6 @@ export function calculateSupplierFinancials(
     if (r.referenceCode) recordedOrderCodes.add(r.referenceCode);
     if (r.id && r.id.startsWith('debt-ncc-')) recordedOrderCodes.add(r.id.replace('debt-ncc-', ''));
   }
-
-  const matchingOrders = supplierOrders.filter(
-    (o) =>
-      o.supplierId === supplier.id ||
-      (o.supplierName && o.supplierName.trim().toLowerCase() === normName)
-  );
 
   let unrecordedImport = 0;
   let unrecordedPaid = 0;
@@ -1277,6 +1322,78 @@ function recalcSupplierDebtsImpl(supplierId?: string) {
 /**
  * Tính toán lại toàn bộ tài chính công nợ cho tất cả Nhà Phân Phối
  */
+
+// ---------- Tính công nợ HÀNG LOẠT (nhanh): gom đơn & sổ công nợ theo đối tác 1 lần ----------
+// Kết quả giống hệt calculateDistributorFinancials / calculateSupplierFinancials gọi cho từng đối tác,
+// nhưng chỉ duyệt đơn & công nợ 1 lượt thay vì (số đối tác × số đơn) lượt.
+
+type PartnerLike = { id: string; code?: string; name?: string };
+
+function indexPartners(partners: PartnerLike[]) {
+  const byId = new Map<string, number[]>();
+  const byCode = new Map<string, number[]>();
+  const byName = new Map<string, number[]>();
+  const add = (m: Map<string, number[]>, k: string | undefined, i: number) => {
+    if (!k) return;
+    const list = m.get(k);
+    if (list) list.push(i);
+    else m.set(k, [i]);
+  };
+  partners.forEach((p, i) => {
+    add(byId, p.id, i);
+    add(byCode, p.code, i);
+    add(byName, p.name ? p.name.trim().toLowerCase() : '', i);
+  });
+  return (id?: string, code?: string, name?: string) => {
+    const out = new Set<number>();
+    if (id) byId.get(id)?.forEach((i) => out.add(i));
+    if (code) byCode.get(code)?.forEach((i) => out.add(i));
+    const n = name ? name.trim().toLowerCase() : '';
+    if (n) byName.get(n)?.forEach((i) => out.add(i));
+    return out;
+  };
+}
+
+export function computeAllDistributorFinancials(
+  distributors: Distributor[],
+  debtRecords: DebtDailyRecord[],
+  orders: Order[],
+): Map<string, ReturnType<typeof calculateDistributorFinancials>> {
+  const match = indexPartners(distributors);
+  const recs: DebtDailyRecord[][] = distributors.map(() => []);
+  const ords: Order[][] = distributors.map(() => []);
+  for (const r of debtRecords) {
+    if (r.partnerType !== 'npp') continue;
+    match(r.partnerId, r.partnerCode, r.partnerName).forEach((i) => recs[i].push(r));
+  }
+  for (const o of orders) {
+    match(o.distributorId, undefined, o.distributorName).forEach((i) => ords[i].push(o));
+  }
+  const out = new Map<string, ReturnType<typeof calculateDistributorFinancials>>();
+  distributors.forEach((d, i) => out.set(d.id, distributorFinancialsFrom(d, recs[i], ords[i])));
+  return out;
+}
+
+export function computeAllSupplierFinancials(
+  suppliers: Supplier[],
+  debtRecords: DebtDailyRecord[],
+  supplierOrders: SupplierOrder[],
+): Map<string, ReturnType<typeof calculateSupplierFinancials>> {
+  const match = indexPartners(suppliers);
+  const recs: DebtDailyRecord[][] = suppliers.map(() => []);
+  const ords: SupplierOrder[][] = suppliers.map(() => []);
+  for (const r of debtRecords) {
+    if (r.partnerType !== 'ncc') continue;
+    match(r.partnerId, r.partnerCode, r.partnerName).forEach((i) => recs[i].push(r));
+  }
+  for (const o of supplierOrders) {
+    match(o.supplierId, undefined, o.supplierName).forEach((i) => ords[i].push(o));
+  }
+  const out = new Map<string, ReturnType<typeof calculateSupplierFinancials>>();
+  suppliers.forEach((sp, i) => out.set(sp.id, supplierFinancialsFrom(sp, recs[i], ords[i])));
+  return out;
+}
+
 function recalcAllDistributorsDebtsImpl() {
   const orderStore = useOrderStore.getState();
   const debtStore = useDebtStore.getState();
@@ -1284,8 +1401,20 @@ function recalcAllDistributorsDebtsImpl() {
 
   if (distStore.distributors.length === 0) return;
 
+  const finMap = computeAllDistributorFinancials(distStore.distributors, debtStore.records, orderStore.orders);
+  let changed = false;
   const updatedDistributors = distStore.distributors.map((dist) => {
-    const fin = calculateDistributorFinancials(dist, debtStore.records, orderStore.orders);
+    const fin = finMap.get(dist.id)!;
+    if (
+      dist.salesAmount === fin.salesAmount &&
+      dist.collectedAmount === fin.collectedAmount &&
+      dist.finalDebt === fin.finalDebt &&
+      dist.currentDebt === fin.finalDebt &&
+      dist.totalRevenue === fin.totalRevenue
+    ) {
+      return dist;
+    }
+    changed = true;
     return {
       ...dist,
       salesAmount: fin.salesAmount,
@@ -1296,7 +1425,8 @@ function recalcAllDistributorsDebtsImpl() {
     };
   });
 
-  useDistributorStore.setState({ distributors: updatedDistributors });
+  // Không đổi gì → không cập nhật store (tránh vẽ lại trang & lưu / đồng bộ thừa)
+  if (changed) useDistributorStore.setState({ distributors: updatedDistributors });
 }
 
 /**
@@ -1309,8 +1439,19 @@ function recalcAllSuppliersDebtsImpl() {
 
   if (supStore.suppliers.length === 0) return;
 
+  const finMap = computeAllSupplierFinancials(supStore.suppliers, debtStore.records, supOrderStore.orders);
+  let changed = false;
   const updatedSuppliers = supStore.suppliers.map((s) => {
-    const fin = calculateSupplierFinancials(s, debtStore.records, supOrderStore.orders);
+    const fin = finMap.get(s.id)!;
+    if (
+      s.importAmount === fin.importAmount &&
+      s.paidAmount === fin.paidAmount &&
+      s.finalDebt === fin.finalDebt &&
+      s.totalDebt === fin.totalDebt
+    ) {
+      return s;
+    }
+    changed = true;
     return {
       ...s,
       importAmount: fin.importAmount,
@@ -1320,7 +1461,8 @@ function recalcAllSuppliersDebtsImpl() {
     };
   });
 
-  useSupplierStore.setState({ suppliers: updatedSuppliers });
+  // Không đổi gì → không cập nhật store (tránh vẽ lại trang & lưu / đồng bộ thừa)
+  if (changed) useSupplierStore.setState({ suppliers: updatedSuppliers });
 }
 
 /**

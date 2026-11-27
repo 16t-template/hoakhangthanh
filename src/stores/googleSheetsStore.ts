@@ -42,7 +42,8 @@ interface GoogleSheetsState {
   // Actions
   checkStatus: () => Promise<void>;
   syncToSheets: (isBackground?: boolean, modules?: SyncableModule[]) => Promise<boolean>;
-  pullFromSheets: () => Promise<boolean>;
+  /** silent: tải ngầm (lúc mở trang) → không hiện thông báo */
+  pullFromSheets: (silent?: boolean) => Promise<boolean>;
   setAutoSync: (enabled: boolean) => void;
   clearLogs: () => void;
 }
@@ -156,7 +157,7 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
         }
       },
 
-      pullFromSheets: async () => {
+      pullFromSheets: async (silent = false) => {
         if (get().isSyncing) return false;
         set({ isSyncing: true });
 
@@ -181,7 +182,7 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
                 ...state.syncLogs.slice(0, 49),
               ],
             }));
-            toast.success(result.message);
+            if (!silent) toast.success(result.message);
             return true;
           } else {
             set((state) => ({
@@ -197,12 +198,12 @@ export const useGoogleSheetsStore = create<GoogleSheetsState>()(
                 ...state.syncLogs.slice(0, 49),
               ],
             }));
-            toast.error(result.message);
+            if (!silent) toast.error(result.message);
             return false;
           }
         } catch (err: any) {
           set({ isSyncing: false });
-          toast.error(`Lỗi tải dữ liệu: ${err?.message}`);
+          if (!silent) toast.error(`Lỗi tải dữ liệu: ${err?.message}`);
           return false;
         }
       },
@@ -329,7 +330,7 @@ export function initGoogleSheetsAutoSync() {
     applyingRemoteData = true;
     let ok = false;
     try {
-      ok = Boolean(await pullFromSheets());
+      ok = Boolean(await pullFromSheets(true));
     } catch {
       ok = false;
     } finally {

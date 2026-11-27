@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock, Mail, MapPin, Phone, Star, Truck } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, CheckCircle2, Clock, Mail, MapPin, Phone, Receipt, Star, Truck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { Drawer } from '@/components/ui/Drawer';
-import { useSupplierStore } from '@/stores/hoaKhangThanhStore';
+import { normalizeToISODate, useSupplierStore } from '@/stores/hoaKhangThanhStore';
+import { useAllDebtRecords } from '@/lib/virtualDebt';
 import type { Supplier } from '@/types/hoaKhangThanh';
 import { formatDate } from '@/lib/format';
 
@@ -219,7 +220,7 @@ export function NCCDrawer({ isOpen, onClose, supplier, mode = 'create' }: Props)
               <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block pb-1 border-b border-border/60">
                 Đối soát công nợ NCC
               </span>
-              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
                 <div>
                   <span className="text-muted-foreground block text-[10px]">Công nợ cũ:</span>
                   <span className="font-semibold text-foreground">{formatNumber(supplier.oldDebt || 0)}</span>
@@ -252,6 +253,8 @@ export function NCCDrawer({ isOpen, onClose, supplier, mode = 'create' }: Props)
               ))}
             </div>
           </div>
+
+          <NCCDebtTable supplier={supplier} />
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -441,5 +444,135 @@ export function NCCDrawer({ isOpen, onClose, supplier, mode = 'create' }: Props)
         </form>
       )}
     </Drawer>
+  );
+}
+
+const fmtNum = (num: number) => new Intl.NumberFormat('vi-VN').format(Math.round(num || 0));
+const isThuRecord = (r: { type?: string; decreaseAmount?: number; increaseAmount?: number }) =>
+  r.type === 'thu' || ((r.decreaseAmount || 0) > 0 && (r.increaseAmount || 0) === 0);
+
+/** Bảng công nợ theo ngày của 1 NCC (dòng ảo từ Đơn nhập NCC + dòng nhập tay ở Công nợ NCC) */
+function NCCDebtTable({ supplier }: { supplier: Supplier }) {
+  const records = useAllDebtRecords();
+
+  const rows = useMemo(() => {
+    const normName = (supplier.name || '').trim().toLowerCase();
+    const matching = records.filter(
+      (r) =>
+        r.partnerType === 'ncc' &&
+        (r.partnerId === supplier.id ||
+          (r.partnerCode && r.partnerCode === supplier.code) ||
+          (r.partnerName && r.partnerName.trim().toLowerCase() === normName)),
+    );
+    // Cũ → mới để cộng dồn; cùng ngày: Mua (+) trước, Trả (-) sau
+    const chronological = [...matching].sort((a, b) => {
+      const dc = normalizeToISODate(a.date).localeCompare(normalizeToISODate(b.date));
+      if (dc !== 0) return dc;
+      const at = isThuRecord(a);
+      const bt = isThuRecord(b);
+      if (at !== bt) return at ? 1 : -1;
+      return (a.id || '').localeCompare(b.id || '');
+    });
+    let running = supplier.oldDebt || 0;
+    const withBalance = chronological.map((r) => {
+      const thu = isThuRecord(r);
+      const inc = r.increaseAmount !== undefined ? r.increaseAmount : !thu ? r.amount || 0 : 0;
+      const dec = r.decreaseAmount !== undefined ? r.decreaseAmount : thu ? r.amount || 0 : 0;
+      const oldDebt = running;
+      running = oldDebt + inc - dec;
+      return { ...r, oldDebt, increaseAmount: inc, decreaseAmount: dec, finalDebt: running };
+    });
+    return withBalance.reverse(); // mới nhất ở trên
+  }, [records, supplier]);
+
+  const totals = useMemo(() => {
+    const inc = rows.reduce((s, r) => s + (r.increaseAmount || 0), 0);
+    const dec = rows.reduce((s, r) => s + (r.decreaseAmount || 0), 0);
+    const start = supplier.oldDebt || 0;
+    return { start, inc, dec, end: start + inc - dec };
+  }, [rows, supplier]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-bold text-foreground flex items-center gap-1.5">
+          <Receipt size={15} className="text-primary" />
+          Sổ công nợ NCC theo ngày
+        </span>
+        <span className="text-muted-foreground font-mono">{rows.length} phát sinh</span>
+      </div>
+
+      {rows.length === 0 ? (
+        <div className="p-6 text-center rounded-xl border border-dashed border-border bg-muted/20 text-xs text-muted-foreground">
+          <Receipt size={26} className="mx-auto mb-2 opacity-40" />
+          Chưa có phát sinh công nợ nào với nhà cung cấp này.
+        </div>
+      ) : (
+        <div className="overflow-auto max-h-[420px] rounded-xl border border-border">
+          <table className="w-full text-xs text-left border-collapse min-w-[720px]">
+            <thead className="sticky top-0 bg-muted text-foreground font-semibold border-b border-border">
+              <tr>
+                <th className="py-2 px-2.5 whitespace-nowrap">Ngày</th>
+                <th className="py-2 px-2.5 whitespace-nowrap">Chứng từ / Đơn nhập</th>
+                <th className="py-2 px-2.5 text-right whitespace-nowrap">Công nợ cũ</th>
+                <th className="py-2 px-2.5 text-right whitespace-nowrap">Tiền nhập hoa (+)</th>
+                <th className="py-2 px-2.5 text-right whitespace-nowrap">Tiền trả NCC (-)</th>
+                <th className="py-2 px-2.5 text-right whitespace-nowrap">Công nợ cuối</th>
+                <th className="py-2 px-2.5 min-w-[140px]">Ghi chú</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-muted/30">
+                  <td className="py-2 px-2.5 font-mono font-semibold whitespace-nowrap">
+                    {formatDate(normalizeToISODate(r.date))}
+                  </td>
+                  <td className="py-2 px-2.5 font-mono text-muted-foreground whitespace-nowrap">
+                    {r.referenceCode || '—'}
+                  </td>
+                  <td className="py-2 px-2.5 font-mono text-right text-muted-foreground whitespace-nowrap">
+                    {fmtNum(r.oldDebt)}
+                  </td>
+                  <td className="py-2 px-2.5 font-mono text-right font-bold whitespace-nowrap">
+                    {r.increaseAmount ? fmtNum(r.increaseAmount) : '—'}
+                  </td>
+                  <td className="py-2 px-2.5 font-mono text-right font-bold text-emerald-600 whitespace-nowrap">
+                    {r.decreaseAmount ? fmtNum(r.decreaseAmount) : '—'}
+                  </td>
+                  <td
+                    className={`py-2 px-2.5 font-mono text-right font-extrabold whitespace-nowrap ${
+                      r.finalDebt > 0 ? 'text-rose-600' : 'text-emerald-600'
+                    }`}
+                  >
+                    {fmtNum(r.finalDebt)}
+                  </td>
+                  <td className="py-2 px-2.5 max-w-[200px] truncate text-muted-foreground" title={r.notes}>
+                    {r.notes || '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="sticky bottom-0 bg-muted font-bold border-t border-border">
+              <tr>
+                <td colSpan={2} className="py-2 px-2.5 whitespace-nowrap">
+                  Tổng ({rows.length} phát sinh)
+                </td>
+                <td className="py-2 px-2.5 font-mono text-right whitespace-nowrap">{fmtNum(totals.start)}</td>
+                <td className="py-2 px-2.5 font-mono text-right whitespace-nowrap">{fmtNum(totals.inc)}</td>
+                <td className="py-2 px-2.5 font-mono text-right text-emerald-600 whitespace-nowrap">{fmtNum(totals.dec)}</td>
+                <td
+                  className={`py-2 px-2.5 font-mono text-right whitespace-nowrap ${
+                    totals.end > 0 ? 'text-rose-600' : 'text-emerald-600'
+                  }`}
+                >
+                  {fmtNum(totals.end)}
+                </td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

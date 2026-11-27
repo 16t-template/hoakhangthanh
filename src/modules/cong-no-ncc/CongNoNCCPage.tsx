@@ -79,9 +79,18 @@ export default function CongNoNCCPage() {
 
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
-  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom'>('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Mặc định lọc 7 ngày gần nhất
+  const weekRange = () => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    const today = new Date();
+    const past = new Date(today);
+    past.setDate(today.getDate() - 6);
+    return { start: toISO(past), end: toISO(today) };
+  };
+  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | 'yesterday' | 'week' | 'month' | 'custom'>('week');
+  const [startDate, setStartDate] = useState(() => weekRange().start);
+  const [endDate, setEndDate] = useState(() => weekRange().end);
 
   // Partner Filter: Đọc từ query param nccId nếu có
   const nccParam = searchParams.get('nccId');
@@ -169,7 +178,7 @@ export default function CongNoNCCPage() {
       setEndDate(s);
     } else if (mode === 'week') {
       const past7 = new Date(today);
-      past7.setDate(today.getDate() - 7);
+      past7.setDate(today.getDate() - 6);
       setStartDate(toISO(past7));
       setEndDate(toISO(today));
     } else if (mode === 'month') {
